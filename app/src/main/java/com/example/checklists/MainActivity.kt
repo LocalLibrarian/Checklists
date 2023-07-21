@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Bundle
 import android.telephony.AccessNetworkConstants.GeranBand
 import android.util.Log
+import android.view.Window
 import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -87,6 +89,7 @@ const val EndItems = "ENDOFITEMS"
 
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        supportRequestWindowFeature(Window.FEATURE_NO_TITLE)
         super.onCreate(savedInstanceState)
 
         setContent {
@@ -101,6 +104,7 @@ class MainActivity : AppCompatActivity() {
 @Composable
 @Preview
 fun MainScreen() {
+    var selectedItemIndex by remember { mutableStateOf(-1) }
     var path = "All items"
     var items = mutableListOf<GenericItem>()
     val configuration = LocalConfiguration.current
@@ -114,10 +118,6 @@ fun MainScreen() {
     var autoDelListTime = "60"
     var autoDelListSelect = "Minutes"
     var moveCompleteItemsSelect = "Bottom"
-    var newItemName by rememberSaveable { mutableStateOf("New Item") }
-    val itemTypes = arrayOf("Checklist", "Folder")
-    var newItemExpanded by remember { mutableStateOf(false) }
-    var newItemSelectedType by remember { mutableStateOf(itemTypes[0]) }
     val context = LocalContext.current
     val settingsSaved= loadSettings(context)
     if (settingsSaved.isNotEmpty()) {
@@ -126,7 +126,10 @@ fun MainScreen() {
         moveCompleteItemsSelect = settingsSaved[2]
     }
     Log.i("SETTINGS","Settings now: $autoDelListTime, $autoDelListSelect, $moveCompleteItemsSelect")
-    Column(Modifier.background(Color.LightGray)) {
+    Column(
+        Modifier
+            .background(Color.LightGray)
+            .fillMaxHeight()) {
         Row(
             Modifier
                 .background(Color.Blue)
@@ -175,7 +178,24 @@ fun MainScreen() {
         }
         Text(text = "All items")
         Column(Modifier.verticalScroll(rememberScrollState())) {
-            drawItems(items = items, screenWidth, bannerHeight, path, context)
+            loadItems(context, items)
+            items.sortBy{it.position}
+            var color = Color.LightGray
+            var index = 0
+            items.forEach {
+                drawItems(
+                    it,
+                    screenWidth,
+                    bannerHeight,
+                    path,
+                    context,
+                    onItemSelect = { itemSelected -> selectedItemIndex = itemSelected }, color, index)
+                index++
+                color = if(color == Color.LightGray) Color.Gray else Color.LightGray
+            }
+        }
+        if(selectedItemIndex > -1) {
+            Log.i("SELECT", "Selected item index: $selectedItemIndex")
         }
     }
     if (settingsOpen) {
@@ -184,79 +204,89 @@ fun MainScreen() {
             autoDelListTime, autoDelListSelect, moveCompleteItemsSelect)
     }
     if (createOpen) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxSize()) {
-            Box(
-                modifier = Modifier
-                    .size(width = settingsWidth.dp, height = settingsHeight.dp)
-                    .background(Color(216, 216, 216, 255))
-            ) {
-                Row(
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.Top,
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    Image(
-                        painter = painterResource(R.drawable.closeicon),
-                        contentDescription = "Close Create New Icon",
-                        modifier = Modifier
-                            .clickable(enabled = true, onClick = { createOpen = false })
-                    )
-                }
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Top
-                ) {
-                    Text(text = "Create New")
-                    Box(
-                        modifier = Modifier
-                            .size(width = settingsWidth.dp, height = 5.dp)
-                            .background(Color(204, 204, 204, 255))
-                    )
-                    Text(text = "Item Name:")
-                    TextField(
-                        value = newItemName,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
-                        singleLine = true,
-                        onValueChange = {
-                            newItemName = it
-                        }
-                    )
-                    Text(text = "Item Type:")
-                    ExposedDropdownMenuBox(
-                        expanded = newItemExpanded,
-                        onExpandedChange = {
-                            newItemExpanded = !newItemExpanded
-                        }
-                    ) {
-                        TextField(
-                            value = newItemSelectedType,
-                            onValueChange = {},
-                            readOnly = true,
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = newItemExpanded) },
-                            modifier = Modifier.menuAnchor()
-                        )
+        createScreen(settingsWidth, settingsHeight, context, items, onClose = {createOpen = false})
+    }
+}
 
-                        ExposedDropdownMenu(
-                            expanded = newItemExpanded,
-                            onDismissRequest = { newItemExpanded = false }
-                        ) {
-                            itemTypes.forEach { item ->
-                                DropdownMenuItem(
-                                    text = { Text(text = item) },
-                                    onClick = {
-                                        newItemSelectedType = item
-                                        newItemExpanded = false
-                                    }
-                                )
-                            }
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun createScreen(settingsWidth: Double, settingsHeight: Double, context: Context, items: MutableList<GenericItem>, onClose: () -> Unit) {
+    var newItemName by rememberSaveable { mutableStateOf("New Item") }
+    val itemTypes = arrayOf("Checklist", "Folder")
+    var newItemExpanded by remember { mutableStateOf(false) }
+    var newItemSelectedType by remember { mutableStateOf(itemTypes[0]) }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .size(width = settingsWidth.dp, height = settingsHeight.dp)
+                .background(Color(216, 216, 216, 255))
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.Top,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.closeicon),
+                    contentDescription = "Close Create New Icon",
+                    modifier = Modifier
+                        .clickable(enabled = true, onClick = { onClose() })
+                )
+            }
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Top
+            ) {
+                Text(text = "Create New")
+                Box(
+                    modifier = Modifier
+                        .size(width = settingsWidth.dp, height = 5.dp)
+                        .background(Color(204, 204, 204, 255))
+                )
+                Text(text = "Item Name:")
+                TextField(
+                    value = newItemName,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                    singleLine = true,
+                    onValueChange = {
+                        newItemName = it
+                    }
+                )
+                Text(text = "Item Type:")
+                ExposedDropdownMenuBox(
+                    expanded = newItemExpanded,
+                    onExpandedChange = {
+                        newItemExpanded = !newItemExpanded
+                    }
+                ) {
+                    TextField(
+                        value = newItemSelectedType,
+                        onValueChange = {},
+                        readOnly = true,
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = newItemExpanded) },
+                        modifier = Modifier.menuAnchor()
+                    )
+
+                    ExposedDropdownMenu(
+                        expanded = newItemExpanded,
+                        onDismissRequest = { newItemExpanded = false }
+                    ) {
+                        itemTypes.forEach { item ->
+                            DropdownMenuItem(
+                                text = { Text(text = item) },
+                                onClick = {
+                                    newItemSelectedType = item
+                                    newItemExpanded = false
+                                }
+                            )
                         }
                     }
-                    Button(
-                        onClick = { createNewItem(items, newItemName, newItemSelectedType, context) }
-                    ) {
-                        Text("Create")
-                    }
+                }
+                Button(
+                    onClick = { createNewItem(items, newItemName, newItemSelectedType, context) }
+                ) {
+                    Text("Create")
                 }
             }
         }
@@ -266,8 +296,8 @@ fun MainScreen() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun settingsScreen(settingsWidth: Double, settingsHeight: Double, context: Context, onClose: () -> Unit, onDelTimeChange: (String) -> Unit,
-    onDelListSelectChange: (String) -> Unit, onMoveCompleteItemsSelectChange: (String) -> Unit, defDelTime: String, defDelListSelect: String,
-    defMoveCompleteItemsSelect: String){
+                   onDelListSelectChange: (String) -> Unit, onMoveCompleteItemsSelectChange: (String) -> Unit, defDelTime: String, defDelListSelect: String,
+                   defMoveCompleteItemsSelect: String){
     var autoDelListTime by rememberSaveable { mutableStateOf(defDelTime) }
     val delUnits = arrayOf("Minutes", "Hours", "Days")
     var autoDelListExpanded by remember { mutableStateOf(false) }
@@ -392,23 +422,18 @@ fun drawItemIcon(item: GenericItem) {
 }
 
 @Composable
-fun drawItems(items: MutableList<GenericItem>, screenWidth: Int, bannerHeight: Double, path: String, context: Context) {
-    loadItems(context, items)
-    items.sortBy{it.position}
-    var color = Color.LightGray
-    items.forEach {
-        if(it.parent == path.substringAfterLast('/')) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Start,
-                modifier =
-                Modifier
-                    .background(color)
-                    .size(width = screenWidth.dp, height = bannerHeight.dp)
-            ) {
-                drawItemIcon(item = it)
-            }
-            if(color == Color.LightGray) color = Color.Gray else color = Color.LightGray
+fun drawItems(item: GenericItem, screenWidth: Int, bannerHeight: Double, path: String, context: Context, onItemSelect: (Int) -> Unit, color: Color, index: Int) {
+    if(item.parent == path.substringAfterLast('/')) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Start,
+            modifier =
+            Modifier
+                .background(color)
+                .size(width = screenWidth.dp, height = bannerHeight.dp)
+                .clickable { onItemSelect(index) }
+        ) {
+            drawItemIcon(item)
         }
     }
 }
