@@ -2,7 +2,6 @@ package com.example.checklists
 
 import android.content.Context
 import android.os.Bundle
-import android.telephony.AccessNetworkConstants.GeranBand
 import android.util.Log
 import android.view.Window
 import android.widget.Toast
@@ -20,7 +19,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.text.KeyboardOptions
@@ -35,7 +33,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -43,14 +40,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.modifier.modifierLocalConsumer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -60,7 +55,6 @@ import java.io.File
 import java.io.FileReader
 import java.io.FileWriter
 import java.io.IOException
-import java.nio.Buffer
 
 /*ListItem is how items in lists are stored in memory*/
 data class ListItem(
@@ -105,7 +99,10 @@ class MainActivity : AppCompatActivity() {
 @Preview
 fun MainScreen() {
     var selectedItemIndex by remember { mutableStateOf(-1) }
-    var path = "All items"
+    var selectedListItemIndex by remember { mutableStateOf(-1)}
+    var inList by remember{mutableStateOf(false)}
+    var activeItems = mutableListOf<GenericItem>()
+    var path by remember{mutableStateOf("All items")}
     var items = mutableListOf<GenericItem>()
     val configuration = LocalConfiguration.current
     val screenHeight = configuration.screenHeightDp
@@ -176,27 +173,71 @@ fun MainScreen() {
                     .clickable(enabled = true, onClick = { createOpen = true })
             )
         }
-        Text(text = "All items")
+        ClickableText(
+            onClick = {
+                path = path.substringBeforeLast('/')
+                selectedItemIndex = -1
+                inList = false
+                      },
+            text = buildAnnotatedString {
+                withStyle(
+                    style = SpanStyle(
+                        color = Color.Black,
+                    )
+                ) { append(path) }
+            }
+        )
         Column(Modifier.verticalScroll(rememberScrollState())) {
-            loadItems(context, items)
+            loadItems(context, items, path, activeItems)
             items.sortBy{it.position}
             var color = Color.LightGray
             var index = 0
+            if(selectedItemIndex > -1) {
+                Log.i("SELECT", "Selected item index: $selectedItemIndex")
+                if(!inList) {
+                    path += "/${activeItems[selectedItemIndex].name}"
+                    inList = activeItems[selectedItemIndex].type == "checklist"
+                    if(!inList) {selectedItemIndex = -1}
+                } else{
+                    rebuildActiveItems(items, activeItems, path)
+                    activeItems[selectedItemIndex].items.forEach {
+                    drawItems(
+                        activeItems[selectedItemIndex],
+                        screenWidth,
+                        bannerHeight,
+                        onItemSelect = { listItemSelected ->
+                            selectedListItemIndex = listItemSelected
+                        },
+                        color,
+                        index,
+                        inList
+                    )
+                    index++
+                    color = if (color == Color.LightGray) Color.Gray else Color.LightGray
+                }
+                }
+            } else {
             items.forEach {
-                drawItems(
-                    it,
-                    screenWidth,
-                    bannerHeight,
-                    path,
-                    context,
-                    onItemSelect = { itemSelected -> selectedItemIndex = itemSelected }, color, index)
-                index++
-                color = if(color == Color.LightGray) Color.Gray else Color.LightGray
+                if(it.parent == path.substringAfterLast('/')) {
+                    drawItems(
+                        it,
+                        screenWidth,
+                        bannerHeight,
+                        onItemSelect = { itemSelected -> selectedItemIndex = itemSelected },
+                        color, index, inList
+                    )
+                    index++
+                    color = if (color == Color.LightGray) Color.Gray else Color.LightGray
+                }
+            }
             }
         }
-        if(selectedItemIndex > -1) {
-            Log.i("SELECT", "Selected item index: $selectedItemIndex")
-        }
+    }
+    if (selectedListItemIndex > -1) {
+        Log.d("SELECT", "Selected listItem index: $selectedListItemIndex")
+        activeItems[selectedItemIndex].items[selectedListItemIndex].completed += 1
+        saveItems(context, items, path, activeItems)
+        selectedListItemIndex = -1
     }
     if (settingsOpen) {
         settingsScreen(settingsWidth, settingsHeight, context, onClose = {settingsOpen = false}, onDelTimeChange = {newTime -> autoDelListTime = newTime},
@@ -204,14 +245,15 @@ fun MainScreen() {
             autoDelListTime, autoDelListSelect, moveCompleteItemsSelect)
     }
     if (createOpen) {
-        createScreen(settingsWidth, settingsHeight, context, items, onClose = {createOpen = false})
+        createScreen(settingsWidth, settingsHeight, context, items, onClose = {createOpen = false}, path, activeItems, inList, selectedItemIndex)
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun createScreen(settingsWidth: Double, settingsHeight: Double, context: Context, items: MutableList<GenericItem>, onClose: () -> Unit) {
+fun createScreen(settingsWidth: Double, settingsHeight: Double, context: Context, items: MutableList<GenericItem>, onClose: () -> Unit, path: String, activeItems: MutableList<GenericItem>, inList: Boolean, selectedItemIndex: Int) {
     var newItemName by rememberSaveable { mutableStateOf("New Item") }
+    var maxComplete by rememberSaveable { mutableStateOf("1") }
     val itemTypes = arrayOf("Checklist", "Folder")
     var newItemExpanded by remember { mutableStateOf(false) }
     var newItemSelectedType by remember { mutableStateOf(itemTypes[0]) }
@@ -253,38 +295,52 @@ fun createScreen(settingsWidth: Double, settingsHeight: Double, context: Context
                         newItemName = it
                     }
                 )
-                Text(text = "Item Type:")
-                ExposedDropdownMenuBox(
-                    expanded = newItemExpanded,
-                    onExpandedChange = {
-                        newItemExpanded = !newItemExpanded
-                    }
-                ) {
+                if(inList) {
+                    Text(text = "Max Completable:")
                     TextField(
-                        value = newItemSelectedType,
-                        onValueChange = {},
-                        readOnly = true,
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = newItemExpanded) },
-                        modifier = Modifier.menuAnchor()
+                        value = maxComplete,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        onValueChange = {
+                            maxComplete = it
+                        }
                     )
-
-                    ExposedDropdownMenu(
+                    Text(text = "\"Max Completable\" means how many times you can tap on the task before it is completed." +
+                            " For example, a task with Max Completable of 3 can be tapped on 3 times before it is marked as totally complete.")
+                } else {
+                    Text(text = "Item Type:")
+                    ExposedDropdownMenuBox(
                         expanded = newItemExpanded,
-                        onDismissRequest = { newItemExpanded = false }
+                        onExpandedChange = {
+                            newItemExpanded = !newItemExpanded
+                        }
                     ) {
-                        itemTypes.forEach { item ->
-                            DropdownMenuItem(
-                                text = { Text(text = item) },
-                                onClick = {
-                                    newItemSelectedType = item
-                                    newItemExpanded = false
-                                }
-                            )
+                        TextField(
+                            value = newItemSelectedType,
+                            onValueChange = {},
+                            readOnly = true,
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = newItemExpanded) },
+                            modifier = Modifier.menuAnchor()
+                        )
+
+                        ExposedDropdownMenu(
+                            expanded = newItemExpanded,
+                            onDismissRequest = { newItemExpanded = false }
+                        ) {
+                            itemTypes.forEach { item ->
+                                DropdownMenuItem(
+                                    text = { Text(text = item) },
+                                    onClick = {
+                                        newItemSelectedType = item
+                                        newItemExpanded = false
+                                    }
+                                )
+                            }
                         }
                     }
                 }
                 Button(
-                    onClick = { createNewItem(items, newItemName, newItemSelectedType, context) }
+                    onClick = { createNewItem(items, newItemName, newItemSelectedType, context, path, activeItems, inList, selectedItemIndex, maxComplete.toInt()) }
                 ) {
                     Text("Create")
                 }
@@ -406,8 +462,11 @@ fun settingsScreen(settingsWidth: Double, settingsHeight: Double, context: Conte
 }
 
 @Composable
-fun drawItemIcon(item: GenericItem) {
-    if(item.type == "checklist") {
+fun drawItemIcon(item: GenericItem, index: Int, inList: Boolean) {
+    if(inList) {
+        Text(text = "${item.items[index].completed} / ${item.items[index].max}")
+    }
+    else if(item.type == "checklist") {
         Image(
             painter = painterResource(R.drawable.listicon),
             contentDescription = "List Icon"
@@ -418,39 +477,82 @@ fun drawItemIcon(item: GenericItem) {
             contentDescription = "Folder Icon"
         )
     }
-    Text(text = item.name, Modifier.padding(16.dp))
+    Text(text = if(!inList) item.name else item.items[index].name,
+        Modifier.padding(16.dp))
+}
+
+fun isCompletedList(list: GenericItem): Boolean {
+    var retVal = true
+    list.items.forEach {
+        if(it.completed < it.max) {
+            retVal = false
+            return@forEach
+        }
+    }
+    retVal = if(list.items.isEmpty()) false else retVal
+    return retVal
 }
 
 @Composable
-fun drawItems(item: GenericItem, screenWidth: Int, bannerHeight: Double, path: String, context: Context, onItemSelect: (Int) -> Unit, color: Color, index: Int) {
-    if(item.parent == path.substringAfterLast('/')) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Start,
-            modifier =
-            Modifier
-                .background(color)
-                .size(width = screenWidth.dp, height = bannerHeight.dp)
-                .clickable { onItemSelect(index) }
-        ) {
-            drawItemIcon(item)
-        }
+fun drawItems(
+    item: GenericItem,
+    screenWidth: Int,
+    bannerHeight: Double,
+    onItemSelect: (Int) -> Unit,
+    color: Color,
+    index: Int,
+    inList: Boolean
+) {
+    var realColor = color
+    if(inList && item.items[index].completed >= item.items[index].max) realColor = Color.Green
+    if(!inList && isCompletedList(item)) realColor = Color.Green
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Start,
+        modifier =
+        Modifier
+            .background(realColor)
+            .size(width = screenWidth.dp, height = bannerHeight.dp)
+            .clickable { onItemSelect(index) }
+    ) {
+        drawItemIcon(item, index, inList)
     }
 }
 
-private fun createNewItem(itemsList: MutableList<GenericItem>, named: String, typed: String, context: Context) {
-    itemsList.add(GenericItem(
-        name = named,
-        position = itemsList.lastIndex + 1,
-        parent = "All items",
-        type = typed.lowercase(),
-        items = mutableListOf()
-    ))
-    saveItems(context, itemsList)
-    Toast.makeText(context, "Added item: $named to All items", Toast.LENGTH_SHORT).show()
+private fun rebuildActiveItems(items: MutableList<GenericItem>, activeItems: MutableList<GenericItem>, path: String) {
+    var parent: String
+    var parentItem = GenericItem("null", 0, "null", "null", mutableListOf<ListItem>())
+    items.forEach {
+        if(it.name.equals(path.substringAfterLast('/'))) {
+            parentItem = it
+        }
+    }
+    parent = parentItem.parent
+    items.forEach {
+        if(it.parent == parent) activeItems.add(it)
+    }
+    Log.i("REBUILD", "Rebuilt activeItems: $activeItems")
 }
 
-private fun saveItems(context: Context, itemsList: MutableList<GenericItem>) {
+private fun createNewItem(itemsList: MutableList<GenericItem>, named: String, typed: String, context: Context, path: String, activeItems: MutableList<GenericItem>, inList: Boolean, selectedItemIndex: Int, max: Int) {
+    if(inList) {
+        activeItems[selectedItemIndex].items.add(ListItem(name = named, activeItems[selectedItemIndex].items.lastIndex + 1, 0, max))
+        saveItems(context, itemsList, path, activeItems)
+        Toast.makeText(context, "Added task: $named to ${activeItems[selectedItemIndex].name}", Toast.LENGTH_SHORT).show()
+    } else{
+        itemsList.add(GenericItem(
+            name = named,
+            position = itemsList.lastIndex + 1,
+            parent = "All items",
+            type = typed.lowercase(),
+            items = mutableListOf()
+        ))
+        saveItems(context, itemsList, path, activeItems)
+        Toast.makeText(context, "Added item: $named to All items", Toast.LENGTH_SHORT).show()
+    }
+}
+
+private fun saveItems(context: Context, itemsList: MutableList<GenericItem>, path: String, activeItems: MutableList<GenericItem>) {
     try {
         val fileName = "items.txt"
         val file = File(context.filesDir, fileName)
@@ -484,10 +586,10 @@ private fun saveItems(context: Context, itemsList: MutableList<GenericItem>) {
         e.printStackTrace()
         Toast.makeText(context, "Error saving items!", Toast.LENGTH_SHORT).show()
     }
-    loadItems(context, itemsList)
+    loadItems(context, itemsList, path, activeItems)
 }
 
-private fun loadItems(context: Context, items: MutableList<GenericItem>) {
+private fun loadItems(context: Context, items: MutableList<GenericItem>, path: String, activeItems: MutableList<GenericItem>) {
     try {
         val fileName = "items.txt"
         val file = File(context.filesDir, fileName)
@@ -519,6 +621,7 @@ private fun loadItems(context: Context, items: MutableList<GenericItem>) {
                                         loadingListItem.max = line.toInt()
                                         innerLineNum = -1
                                         loadingItem.items.add(loadingListItem)
+                                        loadingListItem = ListItem("null", 0, 0, 0)
                                     }
                                 }
                                 innerLineNum++
@@ -527,11 +630,14 @@ private fun loadItems(context: Context, items: MutableList<GenericItem>) {
                         }
                     }
                     lineNum++
-                    if(line != EndItems) line = reader.readLine()
+                    if(line != EndItems && loadingItem.items.isEmpty()) line = reader.readLine()
                 }
                 if(loadingItem.name != "null") {
                     items.add(loadingItem)
                     Log.i("LOAD", "Loaded item: $loadingItem")
+                    if(loadingItem.parent == path.substringAfterLast('/')) {
+                        activeItems.add(loadingItem)
+                    }
                 }
                 if(line != EndItems) line = reader.readLine()
             }
