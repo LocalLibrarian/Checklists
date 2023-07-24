@@ -49,12 +49,16 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.graphics.toColorInt
 import java.io.BufferedReader
 import java.io.BufferedWriter
 import java.io.File
 import java.io.FileReader
 import java.io.FileWriter
 import java.io.IOException
+import java.lang.IllegalArgumentException
+import java.lang.IllegalStateException
 
 /*ListItem is how items in lists are stored in memory*/
 data class ListItem(
@@ -76,7 +80,7 @@ data class GenericItem(
 /*Value defining what percentage of the screen height the banner and task item entries should take up*/
 const val BannerPercent = 0.1
 /*Value defining what percentage of the screen width/height the settings should take up*/
-const val SettingsPercent = 0.5
+const val SettingsPercent = 0.75
 /*Values defining end of item separator and end of item file*/
 const val EndItem = "ENDITEMSEP"
 const val EndItems = "ENDOFITEMS"
@@ -116,13 +120,16 @@ fun MainScreen() {
     var autoDelListSelect = "Minutes"
     var moveCompleteItemsSelect = "Bottom"
     val context = LocalContext.current
+    val titleFontSize = 22.sp
+    var completedColor = Color.Green
     val settingsSaved= loadSettings(context)
     if (settingsSaved.isNotEmpty()) {
         autoDelListTime = settingsSaved[0]
         autoDelListSelect = settingsSaved[1]
         moveCompleteItemsSelect = settingsSaved[2]
+        completedColor = Color(red = settingsSaved[3].toFloat(), green = settingsSaved[4].toFloat(), blue = settingsSaved[5].toFloat())
     }
-    Log.i("SETTINGS","Settings now: $autoDelListTime, $autoDelListSelect, $moveCompleteItemsSelect")
+    Log.i("SETTINGS","Settings now: $autoDelListTime, $autoDelListSelect, $moveCompleteItemsSelect, $completedColor")
     Column(
         Modifier
             .background(Color.LightGray)
@@ -130,7 +137,8 @@ fun MainScreen() {
         Row(
             Modifier
                 .background(Color.Blue)
-                .size(width = screenWidth.dp, height = bannerHeight.dp)
+                .size(width = screenWidth.dp, height = bannerHeight.dp),
+            verticalAlignment = Alignment.Bottom
         ) {
             Image(
                 painter = painterResource(R.drawable.settingsicon),
@@ -150,11 +158,15 @@ fun MainScreen() {
                     ) { append("Settings") }
                 }
             )
-            Text(
-                text = "Checklists",
-                modifier = Modifier.weight(1f),
-                color = Color.Cyan
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center, modifier = Modifier
+                .fillMaxHeight()
+                .weight(4f)) {
+                Text(
+                    text = "Checklists",
+                    color = Color.Cyan,
+                    fontSize = titleFontSize
+                )
+            }
             ClickableText(
                 onClick = { createOpen = true },
                 text = buildAnnotatedString {
@@ -210,7 +222,7 @@ fun MainScreen() {
                         },
                         color,
                         index,
-                        inList
+                        inList, completedColor
                     )
                     index++
                     color = if (color == Color.LightGray) Color.Gray else Color.LightGray
@@ -224,7 +236,7 @@ fun MainScreen() {
                         screenWidth,
                         bannerHeight,
                         onItemSelect = { itemSelected -> selectedItemIndex = itemSelected },
-                        color, index, inList
+                        color, index, inList, completedColor
                     )
                     index++
                     color = if (color == Color.LightGray) Color.Gray else Color.LightGray
@@ -242,7 +254,7 @@ fun MainScreen() {
     if (settingsOpen) {
         settingsScreen(settingsWidth, settingsHeight, context, onClose = {settingsOpen = false}, onDelTimeChange = {newTime -> autoDelListTime = newTime},
             onDelListSelectChange = {newDelListSelect -> autoDelListSelect = newDelListSelect}, onMoveCompleteItemsSelectChange = {newMoveCompSelect -> moveCompleteItemsSelect = newMoveCompSelect},
-            autoDelListTime, autoDelListSelect, moveCompleteItemsSelect)
+            autoDelListTime, autoDelListSelect, moveCompleteItemsSelect, completedColor)
     }
     if (createOpen) {
         createScreen(settingsWidth, settingsHeight, context, items, onClose = {createOpen = false}, path, activeItems, inList, selectedItemIndex)
@@ -353,7 +365,7 @@ fun createScreen(settingsWidth: Double, settingsHeight: Double, context: Context
 @Composable
 fun settingsScreen(settingsWidth: Double, settingsHeight: Double, context: Context, onClose: () -> Unit, onDelTimeChange: (String) -> Unit,
                    onDelListSelectChange: (String) -> Unit, onMoveCompleteItemsSelectChange: (String) -> Unit, defDelTime: String, defDelListSelect: String,
-                   defMoveCompleteItemsSelect: String){
+                   defMoveCompleteItemsSelect: String, defCompletedColor: Color){
     var autoDelListTime by rememberSaveable { mutableStateOf(defDelTime) }
     val delUnits = arrayOf("Minutes", "Hours", "Days")
     var autoDelListExpanded by remember { mutableStateOf(false) }
@@ -361,6 +373,7 @@ fun settingsScreen(settingsWidth: Double, settingsHeight: Double, context: Conte
     val moveCompleteItems = arrayOf("Bottom", "Top", "Don't Move", "Delete Them")
     var moveCompleteItemsExpanded by remember { mutableStateOf(false) }
     var moveCompleteItemsSelect by remember { mutableStateOf(defMoveCompleteItemsSelect) }
+    var completedColor by remember{ mutableStateOf(defCompletedColor) }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxSize()) {
         Box(
             modifier = Modifier
@@ -390,7 +403,7 @@ fun settingsScreen(settingsWidth: Double, settingsHeight: Double, context: Conte
                     onValueChange = {
                         autoDelListTime = it
                         onDelTimeChange(autoDelListTime)
-                        saveSettings(context, autoDelListTime, autoDelListSelect, moveCompleteItemsSelect)
+                        saveSettings(context, autoDelListTime, autoDelListSelect, moveCompleteItemsSelect, completedColor)
                     }
                 )
                 ExposedDropdownMenuBox(
@@ -418,7 +431,7 @@ fun settingsScreen(settingsWidth: Double, settingsHeight: Double, context: Conte
                                     autoDelListSelect = item
                                     onDelListSelectChange(autoDelListSelect)
                                     autoDelListExpanded = false
-                                    saveSettings(context, autoDelListTime, autoDelListSelect, moveCompleteItemsSelect)
+                                    saveSettings(context, autoDelListTime, autoDelListSelect, moveCompleteItemsSelect, completedColor)
                                 }
                             )
                         }
@@ -450,12 +463,47 @@ fun settingsScreen(settingsWidth: Double, settingsHeight: Double, context: Conte
                                     moveCompleteItemsSelect = item
                                     onMoveCompleteItemsSelectChange(moveCompleteItemsSelect)
                                     moveCompleteItemsExpanded = false
-                                    saveSettings(context, autoDelListTime, autoDelListSelect, moveCompleteItemsSelect)
+                                    saveSettings(context, autoDelListTime, autoDelListSelect, moveCompleteItemsSelect, completedColor)
                                 }
                             )
                         }
                     }
                 }
+                Row(Modifier.background(completedColor)) {
+                    Text(text = "Red, Green, Blue of completed items:")
+                }
+                TextField(
+                    value = completedColor.red.toString(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    onValueChange = {
+                        try {
+                            completedColor = Color(red = it.toFloat(), green = completedColor.green, blue = completedColor.blue)
+                            saveSettings(context, autoDelListTime, autoDelListSelect, moveCompleteItemsSelect, completedColor)
+                        }
+                        catch (e: IllegalArgumentException) {
+                            Toast.makeText(context, "RGB values must be between 0.0 and 1.0", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                )
+                TextField(
+                    value = completedColor.green.toString(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    onValueChange = {
+                        completedColor = Color(green = it.toFloat(), red = completedColor.red, blue = completedColor.blue)
+                        saveSettings(context, autoDelListTime, autoDelListSelect, moveCompleteItemsSelect, completedColor)
+                    }
+                )
+                TextField(
+                    value = completedColor.blue.toString(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    onValueChange = {
+                        completedColor = Color(blue = it.toFloat(), green = completedColor.green, red = completedColor.red)
+                        saveSettings(context, autoDelListTime, autoDelListSelect, moveCompleteItemsSelect, completedColor)
+                    }
+                )
             }
         }
     }
@@ -501,11 +549,11 @@ fun drawItems(
     onItemSelect: (Int) -> Unit,
     color: Color,
     index: Int,
-    inList: Boolean
+    inList: Boolean, completedColor: Color
 ) {
     var realColor = color
-    if(inList && item.items[index].completed >= item.items[index].max) realColor = Color.Green
-    if(!inList && isCompletedList(item)) realColor = Color.Green
+    if(inList && item.items[index].completed >= item.items[index].max) realColor = completedColor
+    if(!inList && isCompletedList(item)) realColor = completedColor
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Start,
@@ -649,7 +697,7 @@ private fun loadItems(context: Context, items: MutableList<GenericItem>, path: S
     }
 }
 
-private fun saveSettings(context: Context, autoDelListTime: String, autoDelListSelect: String, moveCompleteItemsSelect: String) {
+private fun saveSettings(context: Context, autoDelListTime: String, autoDelListSelect: String, moveCompleteItemsSelect: String, completedColor: Color) {
     try {
         val fileName = "settings.txt"
         val file = File(context.filesDir, fileName)
@@ -659,6 +707,12 @@ private fun saveSettings(context: Context, autoDelListTime: String, autoDelListS
         writer.write(autoDelListSelect)
         writer.newLine()
         writer.write(moveCompleteItemsSelect)
+        writer.newLine()
+        writer.write(completedColor.red.toString())
+        writer.newLine()
+        writer.write(completedColor.green.toString())
+        writer.newLine()
+        writer.write(completedColor.blue.toString())
         writer.close()
     } catch (e: IOException) {
         e.printStackTrace()
