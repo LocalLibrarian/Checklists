@@ -188,20 +188,33 @@ fun MainScreen() {
                     .clickable(enabled = true, onClick = { createOpen = true })
             )
         }
-        ClickableText(
-            onClick = {
-                path = path.substringBeforeLast('/')
-                selectedItemIndex = -1
-                inList = false
-                      },
-            text = buildAnnotatedString {
-                withStyle(
-                    style = SpanStyle(
-                        color = Color.Black,
-                    )
-                ) { append(path) }
+        Row() {/*
+            ClickableText(
+                onClick = {
+                    path = path.substringBeforeLast('/')
+                    selectedItemIndex = -1
+                    inList = false
+                },
+                text = buildAnnotatedString {
+                    withStyle(
+                        style = SpanStyle(
+                            color = Color.Black,
+                        )
+                    ) { append(path) }
+                }
+            )*/
+            var splitPath = path.split('/')
+            var buildPath = ""
+            splitPath.forEach {
+                buildPath += "$it/"
+                drawPath(path = buildPath.substringBeforeLast('/'), onUse = {
+                    newPath -> path = newPath
+                    selectedItemIndex = -1
+                    inList = false
+                })
+                Text(text = "/")
             }
-        )
+        }
         Column(Modifier.verticalScroll(rememberScrollState())) {
             loadItems(context, items, path, activeItems)
             items.sortBy{it.position}
@@ -274,6 +287,22 @@ fun MainScreen() {
     if (createOpen) {
         createScreen(settingsWidth, settingsHeight, context, items, onClose = {createOpen = false}, path, activeItems, inList, selectedItemIndex, moveCompleteItemsSelect)
     }
+}
+
+@Composable
+fun drawPath(path: String, onUse: (String) -> Unit) {
+    ClickableText(
+        onClick = {
+            onUse(path)
+        },
+        text = buildAnnotatedString {
+            withStyle(
+                style = SpanStyle(
+                    color = Color.Black,
+                )
+            ) { append(path.substringAfterLast('/')) }
+        }
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
