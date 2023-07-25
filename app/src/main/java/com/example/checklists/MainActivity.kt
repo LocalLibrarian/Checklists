@@ -50,7 +50,6 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.graphics.toColorInt
 import java.io.BufferedReader
 import java.io.BufferedWriter
 import java.io.File
@@ -58,7 +57,6 @@ import java.io.FileReader
 import java.io.FileWriter
 import java.io.IOException
 import java.lang.IllegalArgumentException
-import java.lang.IllegalStateException
 
 /*ListItem is how items in lists are stored in memory*/
 data class ListItem(
@@ -74,6 +72,7 @@ data class GenericItem(
     var position: Int,
     var parent: String,
     var type: String,
+    var timeCompleted: Long,
     var items: MutableList<ListItem>
 )
 
@@ -84,6 +83,10 @@ const val SettingsPercent = 0.75
 /*Values defining end of item separator and end of item file*/
 const val EndItem = "ENDITEMSEP"
 const val EndItems = "ENDOFITEMS"
+/*Value defining time units in milliseconds for auto-deleting lists*/
+const val OneMin = 60 * 1000L
+const val OneHour = 60 * OneMin
+const val OneDay = 24 * OneHour
 
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -229,26 +232,38 @@ fun MainScreen() {
                 }
                 }
             } else {
-            items.forEach {
-                if(it.parent == path.substringAfterLast('/')) {
-                    drawItems(
-                        it,
-                        screenWidth,
-                        bannerHeight,
-                        onItemSelect = { itemSelected -> selectedItemIndex = itemSelected },
-                        color, index, inList, completedColor
-                    )
-                    index++
-                    color = if (color == Color.LightGray) Color.Gray else Color.LightGray
+                var toDelete = mutableListOf<GenericItem>()
+                items.forEach {
+                    if(it.parent == path.substringAfterLast('/')) {
+                        var timeUnit = 0L
+                        when (autoDelListSelect) {
+                            "Minutes" -> {timeUnit = OneMin}
+                            "Hours" -> {timeUnit = OneHour}
+                            "Days" -> {timeUnit = OneDay}
+                        }
+                        if(it.timeCompleted > 0L && System.currentTimeMillis() - it.timeCompleted >= autoDelListTime.toLong() * timeUnit) {
+                            toDelete.add(it)
+                        } else {
+                            drawItems(
+                                it,
+                                screenWidth,
+                                bannerHeight,
+                                onItemSelect = { itemSelected -> selectedItemIndex = itemSelected },
+                                color, index, inList, completedColor
+                            )
+                            index++
+                            color = if (color == Color.LightGray) Color.Gray else Color.LightGray
+                        }
+                    }
                 }
-            }
+                deleteCompleted(items, toDelete, context, path, activeItems)
             }
         }
     }
     if (selectedListItemIndex > -1) {
         Log.d("SELECT", "Selected listItem index: $selectedListItemIndex")
         activeItems[selectedItemIndex].items[selectedListItemIndex].completed += 1
-        saveItems(context, items, path, activeItems)
+        handleCompletedItems(autoDelListTime, autoDelListSelect, moveCompleteItemsSelect, activeItems, selectedItemIndex, items, context, path, selectedListItemIndex)
         selectedListItemIndex = -1
     }
     if (settingsOpen) {
@@ -257,13 +272,13 @@ fun MainScreen() {
             autoDelListTime, autoDelListSelect, moveCompleteItemsSelect, completedColor)
     }
     if (createOpen) {
-        createScreen(settingsWidth, settingsHeight, context, items, onClose = {createOpen = false}, path, activeItems, inList, selectedItemIndex)
+        createScreen(settingsWidth, settingsHeight, context, items, onClose = {createOpen = false}, path, activeItems, inList, selectedItemIndex, moveCompleteItemsSelect)
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun createScreen(settingsWidth: Double, settingsHeight: Double, context: Context, items: MutableList<GenericItem>, onClose: () -> Unit, path: String, activeItems: MutableList<GenericItem>, inList: Boolean, selectedItemIndex: Int) {
+fun createScreen(settingsWidth: Double, settingsHeight: Double, context: Context, items: MutableList<GenericItem>, onClose: () -> Unit, path: String, activeItems: MutableList<GenericItem>, inList: Boolean, selectedItemIndex: Int, moveCompleteItemsSelect: String) {
     var newItemName by rememberSaveable { mutableStateOf("New Item") }
     var maxComplete by rememberSaveable { mutableStateOf("1") }
     val itemTypes = arrayOf("Checklist", "Folder")
@@ -352,7 +367,7 @@ fun createScreen(settingsWidth: Double, settingsHeight: Double, context: Context
                     }
                 }
                 Button(
-                    onClick = { createNewItem(items, newItemName, newItemSelectedType, context, path, activeItems, inList, selectedItemIndex, maxComplete.toInt()) }
+                    onClick = { createNewItem(items, newItemName, newItemSelectedType, context, path, activeItems, inList, selectedItemIndex, maxComplete.toInt(), moveCompleteItemsSelect) }
                 ) {
                     Text("Create")
                 }
@@ -370,7 +385,7 @@ fun settingsScreen(settingsWidth: Double, settingsHeight: Double, context: Conte
     val delUnits = arrayOf("Minutes", "Hours", "Days")
     var autoDelListExpanded by remember { mutableStateOf(false) }
     var autoDelListSelect by remember { mutableStateOf(defDelListSelect) }
-    val moveCompleteItems = arrayOf("Bottom", "Top", "Don't Move", "Delete Them")
+    val moveCompleteItems = arrayOf("Bottom", "Top", "Don't Move")
     var moveCompleteItemsExpanded by remember { mutableStateOf(false) }
     var moveCompleteItemsSelect by remember { mutableStateOf(defMoveCompleteItemsSelect) }
     var completedColor by remember{ mutableStateOf(defCompletedColor) }
@@ -491,8 +506,23 @@ fun settingsScreen(settingsWidth: Double, settingsHeight: Double, context: Conte
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                     onValueChange = {
-                        completedColor = Color(green = it.toFloat(), red = completedColor.red, blue = completedColor.blue)
-                        saveSettings(context, autoDelListTime, autoDelListSelect, moveCompleteItemsSelect, completedColor)
+                        try {
+                            completedColor = Color(
+                                green = it.toFloat(),
+                                red = completedColor.red,
+                                blue = completedColor.blue
+                            )
+                            saveSettings(
+                                context,
+                                autoDelListTime,
+                                autoDelListSelect,
+                                moveCompleteItemsSelect,
+                                completedColor
+                            )
+                        }
+                        catch (e: IllegalArgumentException) {
+                            Toast.makeText(context, "RGB values must be between 0.0 and 1.0", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 )
                 TextField(
@@ -500,8 +530,23 @@ fun settingsScreen(settingsWidth: Double, settingsHeight: Double, context: Conte
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                     onValueChange = {
-                        completedColor = Color(blue = it.toFloat(), green = completedColor.green, red = completedColor.red)
-                        saveSettings(context, autoDelListTime, autoDelListSelect, moveCompleteItemsSelect, completedColor)
+                        try {
+                            completedColor = Color(
+                                blue = it.toFloat(),
+                                green = completedColor.green,
+                                red = completedColor.red
+                            )
+                            saveSettings(
+                                context,
+                                autoDelListTime,
+                                autoDelListSelect,
+                                moveCompleteItemsSelect,
+                                completedColor
+                            )
+                        }
+                        catch (e: IllegalArgumentException) {
+                            Toast.makeText(context, "RGB values must be between 0.0 and 1.0", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 )
             }
@@ -567,9 +612,53 @@ fun drawItems(
     }
 }
 
+private fun deleteCompleted(itemsList: MutableList<GenericItem>, toDelete: MutableList<GenericItem>, context: Context, path: String, activeItems: MutableList<GenericItem>) {
+    while(toDelete.isNotEmpty()) {
+        for (i in itemsList.indexOf(toDelete[0]) + 1 until itemsList.size) {
+            itemsList[i].position -= 1
+        }
+        Log.i("DELETE", "Deleted item: ${toDelete[0]} at index: ${itemsList.indexOf(toDelete[0])}")
+        itemsList.removeAt(itemsList.indexOf(toDelete[0]))
+        toDelete.removeAt(0)
+        saveItems(context, itemsList, path, activeItems)
+    }
+}
+
+/*Iterate over current checklist and perform actions on completed tasks according to settings. Do same for handling completed checklists*/
+private fun handleCompletedItems(autoDelListTime: String, autoDelListSelect: String, moveCompleteItemsSelect: String, activeItems: MutableList<GenericItem>,
+                                 selectedItemIndex: Int, itemsList: MutableList<GenericItem>, context: Context, path: String, i: Int) {
+    if(activeItems[selectedItemIndex].items[i].completed >= activeItems[selectedItemIndex].items[i].max) {
+        when (moveCompleteItemsSelect) {
+            "Bottom" -> {
+                activeItems[selectedItemIndex].items[i].position = activeItems[selectedItemIndex].items.size - 1
+                for (j in i + 1 until activeItems[selectedItemIndex].items.size) {
+                    activeItems[selectedItemIndex].items[j].position -= 1
+                }
+            }
+            "Top" -> {
+                for (j in 0 until i) {
+                    activeItems[selectedItemIndex].items[j].position += 1
+                }
+                activeItems[selectedItemIndex].items[i].position = 0
+            } /*legacy code*/
+            "Delete Them" -> {
+                for (j in i + 1 until activeItems[selectedItemIndex].items.size) {
+                    activeItems[selectedItemIndex].items[j].position -= 1
+                }
+                activeItems[selectedItemIndex].items.removeAt(i)
+            }
+        }
+        activeItems[selectedItemIndex].items.sortBy{it.position}
+    }
+    if(isCompletedList(activeItems[selectedItemIndex])) {
+        activeItems[selectedItemIndex].timeCompleted = System.currentTimeMillis()
+    }
+    saveItems(context, itemsList, path, activeItems)
+}
+
 private fun rebuildActiveItems(items: MutableList<GenericItem>, activeItems: MutableList<GenericItem>, path: String) {
     var parent: String
-    var parentItem = GenericItem("null", 0, "null", "null", mutableListOf<ListItem>())
+    var parentItem = GenericItem("null", 0, "null", "null", 0L, mutableListOf<ListItem>())
     items.forEach {
         if(it.name.equals(path.substringAfterLast('/'))) {
             parentItem = it
@@ -582,21 +671,39 @@ private fun rebuildActiveItems(items: MutableList<GenericItem>, activeItems: Mut
     Log.i("REBUILD", "Rebuilt activeItems: $activeItems")
 }
 
-private fun createNewItem(itemsList: MutableList<GenericItem>, named: String, typed: String, context: Context, path: String, activeItems: MutableList<GenericItem>, inList: Boolean, selectedItemIndex: Int, max: Int) {
+private fun createNewItem(
+    itemsList: MutableList<GenericItem>,
+    named: String,
+    typed: String,
+    context: Context,
+    path: String,
+    activeItems: MutableList<GenericItem>,
+    inList: Boolean,
+    selectedItemIndex: Int,
+    max: Int,
+    moveCompleteItemsSelect: String
+) {
     if(inList) {
-        activeItems[selectedItemIndex].items.add(ListItem(name = named, activeItems[selectedItemIndex].items.lastIndex + 1, 0, max))
+        if(moveCompleteItemsSelect == "Bottom") {
+            activeItems[selectedItemIndex].items.forEach {
+                it.position += 1
+            }
+            activeItems[selectedItemIndex].items.add(ListItem(name = named, 0, 0, max))
+            activeItems[selectedItemIndex].items.sortBy {it.position}
+        } else activeItems[selectedItemIndex].items.add(ListItem(name = named, activeItems[selectedItemIndex].items.lastIndex + 1, 0, max))
         saveItems(context, itemsList, path, activeItems)
         Toast.makeText(context, "Added task: $named to ${activeItems[selectedItemIndex].name}", Toast.LENGTH_SHORT).show()
     } else{
         itemsList.add(GenericItem(
             name = named,
             position = itemsList.lastIndex + 1,
-            parent = "All items",
+            parent = path.substringAfterLast('/'),
             type = typed.lowercase(),
+            timeCompleted = 0L,
             items = mutableListOf()
         ))
         saveItems(context, itemsList, path, activeItems)
-        Toast.makeText(context, "Added item: $named to All items", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, "Added item: $named to ${path.substringAfterLast('/')}", Toast.LENGTH_SHORT).show()
     }
 }
 
@@ -613,6 +720,8 @@ private fun saveItems(context: Context, itemsList: MutableList<GenericItem>, pat
             writer.write(generic.parent)
             writer.newLine()
             writer.write(generic.type)
+            writer.newLine()
+            writer.write(generic.timeCompleted.toString())
             generic.items.forEach {
                 writer.newLine()
                 writer.write(it.name)
@@ -650,7 +759,7 @@ private fun loadItems(context: Context, items: MutableList<GenericItem>, path: S
             line = reader.readLine()
             while (line != null && line != EndItems) {
                 var lineNum = 0
-                var loadingItem = GenericItem("null", 0, "All items", "checklist", mutableListOf())
+                var loadingItem = GenericItem("null", 0, "All items", "checklist", 0L, mutableListOf())
                 while(line != null && line != EndItem && line != EndItems) {
                     var innerLineNum = 0
                     var loadingListItem = ListItem("null", 0, 0, 0)
@@ -659,6 +768,7 @@ private fun loadItems(context: Context, items: MutableList<GenericItem>, path: S
                         1 -> loadingItem.position = line.toInt()
                         2 -> loadingItem.parent = line.substringBeforeLast('\n')
                         3 -> loadingItem.type = line.substringBeforeLast('\n')
+                        4 -> loadingItem.timeCompleted = line.toLong()
                         else -> {
                             while(line != null && line != EndItem && line != EndItems) {
                                 when(innerLineNum) {
