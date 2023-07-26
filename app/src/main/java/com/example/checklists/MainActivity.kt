@@ -7,15 +7,18 @@ import android.view.Window
 import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -57,6 +60,7 @@ import java.io.FileReader
 import java.io.FileWriter
 import java.io.IOException
 import java.lang.IllegalArgumentException
+import java.lang.NumberFormatException
 
 /*ListItem is how items in lists are stored in memory*/
 data class ListItem(
@@ -238,7 +242,7 @@ fun MainScreen() {
                         },
                         color,
                         index,
-                        inList, completedColor
+                        inList, completedColor, settingsWidth, settingsHeight, context, path, items, activeItems
                     )
                     index++
                     color = if (color == Color.LightGray) Color.Gray else Color.LightGray
@@ -262,7 +266,7 @@ fun MainScreen() {
                                 screenWidth,
                                 bannerHeight,
                                 onItemSelect = { itemSelected -> selectedItemIndex = itemSelected },
-                                color, index, inList, completedColor
+                                color, index, inList, completedColor, settingsWidth, settingsHeight, context, path, items, activeItems
                             )
                             index++
                             color = if (color == Color.LightGray) Color.Gray else Color.LightGray
@@ -615,6 +619,7 @@ fun isCompletedList(list: GenericItem): Boolean {
     return retVal
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun drawItems(
     item: GenericItem,
@@ -623,8 +628,10 @@ fun drawItems(
     onItemSelect: (Int) -> Unit,
     color: Color,
     index: Int,
-    inList: Boolean, completedColor: Color
+    inList: Boolean, completedColor: Color, settingsWidth: Double, settingsHeight: Double,
+    context: Context, path: String, items: MutableList<GenericItem>, activeItems: MutableList<GenericItem>
 ) {
+    var editOpen by remember { mutableStateOf(false) }
     var realColor = color
     if(inList && item.items[index].completed >= item.items[index].max) realColor = completedColor
     if(!inList && isCompletedList(item)) realColor = completedColor
@@ -635,9 +642,121 @@ fun drawItems(
         Modifier
             .background(realColor)
             .size(width = screenWidth.dp, height = bannerHeight.dp)
-            .clickable { onItemSelect(index) }
+            .combinedClickable(onClick = { onItemSelect(index) })
     ) {
         drawItemIcon(item, index, inList)
+        Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+            Button(onClick = { editOpen = true }) {
+                Text(text = "Edit...")
+            }
+        }
+    }
+    if(editOpen) {
+        editScreen(settingsWidth, settingsHeight, onClose = {
+            editOpen = false
+            saveItems(context, items, path, activeItems)
+        }, inList, item, index, items, context)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun editScreen(settingsWidth: Double, settingsHeight: Double, onClose: () -> Unit, inList: Boolean, item: GenericItem, index: Int, items: MutableList<GenericItem>, context: Context) {
+    var newName by remember{ mutableStateOf("") }
+    var newCurrent by remember{ mutableStateOf("") }
+    var newMax by remember{ mutableStateOf("") }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .size(width = settingsWidth.dp, height = settingsHeight.dp)
+                .background(Color(216, 216, 216, 255))
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.Top,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.closeicon),
+                    contentDescription = "Close Edit Icon",
+                    modifier = Modifier
+                        .clickable(enabled = true, onClick = { onClose() })
+                )
+            }
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Top
+            ) {
+                Text(text = "Edit Item")
+                Box(
+                    modifier = Modifier
+                        .size(width = settingsWidth.dp, height = 5.dp)
+                        .background(Color(204, 204, 204, 255))
+                )
+                Text(text = "Item Name:")
+                if(!inList) {
+                    newName = item.name
+                    TextField(
+                        value = newName,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                        singleLine = true,
+                        onValueChange = {
+                            items.forEach { thing ->
+                                if(thing.parent == item.name) thing.parent = it
+                            }
+                            item.name = it
+                            newName = it
+                        }
+                    )
+                } else {
+                    newName = item.items[index].name
+                    TextField(
+                        value = newName,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                        singleLine = true,
+                        onValueChange = {
+                            item.items[index].name = it
+                            newName = it
+                        }
+                    )
+                    Text(text = "Task Current Completeness:")
+                    newCurrent = item.items[index].completed.toString()
+                    TextField(
+                        value = newCurrent,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        onValueChange = {
+                            try {
+                                item.items[index].completed = it.toInt()
+                                newCurrent = it
+                                if (item.items[index].completed < item.items[index].max) item.timeCompleted =
+                                    0L
+                            } catch (e: NumberFormatException) {
+                                Toast.makeText(context, "Values must be at least 0", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    )
+                    Text(text = "Task Max Completable")
+                    newMax = item.items[index].max.toString()
+                    TextField(
+                        value = newMax,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        onValueChange = {
+                            try {
+                                item.items[index].max = it.toInt()
+                                newMax = it
+                                if (item.items[index].completed < item.items[index].max) item.timeCompleted =
+                                    0L
+                            } catch (e: NumberFormatException) {
+                                Toast.makeText(context, "Values must be at least 0", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    )
+                }
+            }
+        }
     }
 }
 
