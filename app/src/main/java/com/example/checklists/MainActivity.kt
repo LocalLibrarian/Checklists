@@ -115,16 +115,15 @@ class MainActivity : AppCompatActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 @Preview
 fun MainScreen() {
     var selectedItemIndex by remember { mutableStateOf(-1) }
     var selectedListItemIndex by remember { mutableStateOf(-1)}
     var inList by remember{mutableStateOf(false)}
-    var activeItems = mutableListOf<GenericItem>()
+    val activeItems = mutableListOf<GenericItem>()
     var path by remember{mutableStateOf("All items")}
-    var items = mutableListOf<GenericItem>()
+    val items = mutableListOf<GenericItem>()
     Log.i("INIT", "Reset/cleared items")
     val configuration = LocalConfiguration.current
     val screenHeight = configuration.screenHeightDp
@@ -200,7 +199,7 @@ fun MainScreen() {
                     .clickable(enabled = true, onClick = { createOpen = true })
             )
         }
-        Row() {/*
+        Row {/*
             ClickableText(
                 onClick = {
                     path = path.substringBeforeLast('/')
@@ -215,11 +214,11 @@ fun MainScreen() {
                     ) { append(path) }
                 }
             )*/
-            var splitPath = path.split('/')
+            val splitPath = path.split('/')
             var buildPath = ""
             splitPath.forEach {
                 buildPath += "$it/"
-                drawPath(path = buildPath.substringBeforeLast('/'), onUse = {
+                DrawPath(path = buildPath.substringBeforeLast('/'), onUse = {
                     newPath -> path = newPath
                     selectedItemIndex = -1
                     inList = false
@@ -244,27 +243,37 @@ fun MainScreen() {
                     if(!inList) {selectedItemIndex = -1}
                 } else{
                     rebuildActiveItems(items, activeItems, path)
-                    if(path.substringAfterLast('/') != TempPath && path.substringAfterLast('/') != TempPath2) activeItems[selectedItemIndex].items.forEach {
-                    drawItems(
-                        activeItems[selectedItemIndex],
-                        screenWidth,
-                        bannerHeight,
-                        onItemSelect = { listItemSelected ->
-                            selectedListItemIndex = listItemSelected
-                        },
-                        color,
-                        index,
-                        inList, completedColor, settingsWidth, settingsHeight, context, path, items, activeItems, onRedraw = {
-                            path += "/$TempPath"
-                        }
-                    )
-                    index++
-                    color = if (color == Color.LightGray) Color.Gray else Color.LightGray
-                }
+                    if(path.substringAfterLast('/') != TempPath && path.substringAfterLast('/') != TempPath2) repeat(
+                        activeItems[selectedItemIndex].items.size
+                    ) {
+                        DrawItems(
+                            activeItems[selectedItemIndex],
+                            screenWidth,
+                            bannerHeight,
+                            onItemSelect = { listItemSelected ->
+                                selectedListItemIndex = listItemSelected
+                            },
+                            color,
+                            index,
+                            inList,
+                            completedColor,
+                            settingsWidth,
+                            settingsHeight,
+                            context,
+                            items,
+                            activeItems,
+                            onRedraw = {
+                                path += "/$TempPath"
+                            },
+                            moveCompleteItemsSelect
+                        )
+                        index++
+                        color = if (color == Color.LightGray) Color.Gray else Color.LightGray
+                    }
                     if(path.substringAfterLast('/') == TempPath2) path = path.substringBeforeLast('/')
                 }
             } else {
-                var toDelete = mutableListOf<GenericItem>()
+                val toDelete = mutableListOf<GenericItem>()
                 items.forEach {
                     if(it.parent == path.substringAfterLast('/')) {
                         var timeUnit = 0L
@@ -276,44 +285,71 @@ fun MainScreen() {
                         if(it.timeCompleted > 0L && System.currentTimeMillis() - it.timeCompleted >= autoDelListTime.toLong() * timeUnit) {
                             toDelete.add(it)
                         } else {
-                            drawItems(
+                            DrawItems(
                                 it,
                                 screenWidth,
                                 bannerHeight,
                                 onItemSelect = { itemSelected -> selectedItemIndex = itemSelected },
-                                color, index, inList, completedColor, settingsWidth, settingsHeight, context, path, items, activeItems, onRedraw = {
+                                color,
+                                index,
+                                inList,
+                                completedColor,
+                                settingsWidth,
+                                settingsHeight,
+                                context,
+                                items,
+                                activeItems,
+                                onRedraw = {
                                     path += "/$TempPath"
-                                }
+                                },
+                                moveCompleteItemsSelect
                             )
                             index++
                             color = if (color == Color.LightGray) Color.Gray else Color.LightGray
                         }
                     }
                 }
-                deleteCompleted(items, toDelete, context, path, activeItems)
+                deleteCompleted(items, toDelete, context)
             }
         }
     }
     if (selectedListItemIndex > -1) {
         Log.d("SELECT", "Selected listItem index: $selectedListItemIndex")
         activeItems[selectedItemIndex].items[selectedListItemIndex].completed += 1
-        handleCompletedItems(autoDelListTime, autoDelListSelect, moveCompleteItemsSelect, activeItems, selectedItemIndex, items, context, path, selectedListItemIndex,
-            onRedraw = {path += "/$TempPath2"})
+        handleCompletedItems(
+            moveCompleteItemsSelect,
+            activeItems,
+            selectedItemIndex,
+            items,
+            context,
+            selectedListItemIndex
+        ) { path += "/$TempPath2" }
         selectedListItemIndex = -1
     }
     if (settingsOpen) {
-        settingsScreen(settingsWidth, settingsHeight, context, onClose = {settingsOpen = false}, onDelTimeChange = {newTime -> autoDelListTime = newTime},
-            onDelListSelectChange = {newDelListSelect -> autoDelListSelect = newDelListSelect}, onMoveCompleteItemsSelectChange = {newMoveCompSelect -> moveCompleteItemsSelect = newMoveCompSelect},
-            autoDelListTime, autoDelListSelect, moveCompleteItemsSelect, completedColor, items, path, activeItems)
+        SettingsScreen(
+            settingsWidth,
+            settingsHeight,
+            context,
+            onClose = {settingsOpen = false},
+            onDelTimeChange = { newTime -> autoDelListTime = newTime},
+            onDelListSelectChange = {newDelListSelect -> autoDelListSelect = newDelListSelect},
+            onMoveCompleteItemsSelectChange = { newMoveCompSelect -> moveCompleteItemsSelect = newMoveCompSelect},
+            autoDelListTime,
+            autoDelListSelect,
+            moveCompleteItemsSelect,
+            completedColor,
+            items
+        )
     }
     if (createOpen) {
-        createScreen(settingsWidth, settingsHeight, context, items, onClose = {createOpen = false}, path, activeItems, inList, selectedItemIndex, moveCompleteItemsSelect)
+        CreateScreen(settingsWidth, settingsHeight, context, items, onClose = {createOpen = false}, path, activeItems, inList, selectedItemIndex, moveCompleteItemsSelect)
     }
     if(path.substringAfterLast('/') == TempPath) path = path.substringBeforeLast('/')
 }
 
 @Composable
-fun drawPath(path: String, onUse: (String) -> Unit) {
+fun DrawPath(path: String, onUse: (String) -> Unit) {
     ClickableText(
         onClick = {
             onUse(path)
@@ -330,7 +366,7 @@ fun drawPath(path: String, onUse: (String) -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun createScreen(settingsWidth: Double, settingsHeight: Double, context: Context, items: MutableList<GenericItem>, onClose: () -> Unit, path: String, activeItems: MutableList<GenericItem>, inList: Boolean, selectedItemIndex: Int, moveCompleteItemsSelect: String) {
+fun CreateScreen(settingsWidth: Double, settingsHeight: Double, context: Context, items: MutableList<GenericItem>, onClose: () -> Unit, path: String, activeItems: MutableList<GenericItem>, inList: Boolean, selectedItemIndex: Int, moveCompleteItemsSelect: String) {
     var newItemName by rememberSaveable { mutableStateOf("New Item") }
     var maxComplete by rememberSaveable { mutableStateOf("1") }
     val itemTypes = arrayOf("Checklist", "Folder")
@@ -430,9 +466,20 @@ fun createScreen(settingsWidth: Double, settingsHeight: Double, context: Context
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun settingsScreen(settingsWidth: Double, settingsHeight: Double, context: Context, onClose: () -> Unit, onDelTimeChange: (String) -> Unit,
-                   onDelListSelectChange: (String) -> Unit, onMoveCompleteItemsSelectChange: (String) -> Unit, defDelTime: String, defDelListSelect: String,
-                   defMoveCompleteItemsSelect: String, defCompletedColor: Color, itemsList: MutableList<GenericItem>, path: String, activeItems: MutableList<GenericItem>){
+fun SettingsScreen(
+    settingsWidth: Double,
+    settingsHeight: Double,
+    context: Context,
+    onClose: () -> Unit,
+    onDelTimeChange: (String) -> Unit,
+    onDelListSelectChange: (String) -> Unit,
+    onMoveCompleteItemsSelectChange: (String) -> Unit,
+    defDelTime: String,
+    defDelListSelect: String,
+    defMoveCompleteItemsSelect: String,
+    defCompletedColor: Color,
+    itemsList: MutableList<GenericItem>
+){
     var autoDelListTime by rememberSaveable { mutableStateOf(defDelTime) }
     val delUnits = arrayOf("Minutes", "Hours", "Days")
     var autoDelListExpanded by remember { mutableStateOf(false) }
@@ -603,7 +650,7 @@ fun settingsScreen(settingsWidth: Double, settingsHeight: Double, context: Conte
                 )
                 Button(onClick = {
                     itemsList.clear()
-                    saveItems(context, itemsList, path, activeItems)
+                    saveItems(context, itemsList)
                 }) {
                     Text(text = "Wipe All Data")
                 }
@@ -613,7 +660,7 @@ fun settingsScreen(settingsWidth: Double, settingsHeight: Double, context: Conte
 }
 
 @Composable
-fun drawItemIcon(item: GenericItem, index: Int, inList: Boolean) {
+fun DrawItemIcon(item: GenericItem, index: Int, inList: Boolean) {
     if(inList) {
         Text(text = "${item.items[index].completed} / ${item.items[index].max}")
     }
@@ -646,15 +693,22 @@ fun isCompletedList(list: GenericItem): Boolean {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun drawItems(
+fun DrawItems(
     item: GenericItem,
     screenWidth: Int,
     bannerHeight: Double,
     onItemSelect: (Int) -> Unit,
     color: Color,
     index: Int,
-    inList: Boolean, completedColor: Color, settingsWidth: Double, settingsHeight: Double,
-    context: Context, path: String, items: MutableList<GenericItem>, activeItems: MutableList<GenericItem>, onRedraw: () -> Unit
+    inList: Boolean,
+    completedColor: Color,
+    settingsWidth: Double,
+    settingsHeight: Double,
+    context: Context,
+    items: MutableList<GenericItem>,
+    activeItems: MutableList<GenericItem>,
+    onRedraw: () -> Unit,
+    moveCompleteItemsSelect: String
 ) {
     var editOpen by remember { mutableStateOf(false) }
     var editVisible by remember { mutableStateOf(false) }
@@ -718,18 +772,18 @@ fun drawItems(
                         item.items[index].position = newRowPosition
                         item.items.sortBy { it.position }
                     }
-                    saveItems(context, items, path, activeItems)
+                    saveItems(context, items)
                     offsetX = 0f
                     offsetY = 0f
                     onRedraw()
                 })
             }
     ) {
-        drawItemIcon(item, index, inList)
+        DrawItemIcon(item, index, inList)
         Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 if (editVisible) {
-                    showEditButton(
+                    ShowEditButton(
                         onClick = { editOpen = true },
                         on2ndClick = { editVisible = false })
                 }
@@ -739,16 +793,16 @@ fun drawItems(
 }
     if(editOpen) {
         editVisible = false
-        editScreen(settingsWidth, settingsHeight, onClose = {
+        EditScreen(settingsWidth, settingsHeight, onClose = {
             editOpen = false
-            saveItems(context, items, path, activeItems)
+            saveItems(context, items)
             onRedraw()
-        }, inList, item, index, items, context)
+        }, inList, item, index, items, context, moveCompleteItemsSelect)
     }
 }
 
 @Composable
-fun showEditButton(onClick: () -> Unit, on2ndClick: () -> Unit) {
+fun ShowEditButton(onClick: () -> Unit, on2ndClick: () -> Unit) {
     Button(onClick = { onClick() }) {
         Text(text = "Edit...")
     }
@@ -759,10 +813,13 @@ fun showEditButton(onClick: () -> Unit, on2ndClick: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun editScreen(settingsWidth: Double, settingsHeight: Double, onClose: () -> Unit, inList: Boolean, item: GenericItem, index: Int, items: MutableList<GenericItem>, context: Context) {
+fun EditScreen(settingsWidth: Double, settingsHeight: Double, onClose: () -> Unit, inList: Boolean, item: GenericItem, index: Int, items: MutableList<GenericItem>, context: Context,
+               moveCompleteItemsSelect: String) {
     var newName by remember{ mutableStateOf("") }
     var newCurrent by remember{ mutableStateOf("") }
     var newMax by remember{ mutableStateOf("") }
+    val possibleParents = mutableListOf<String>()
+    var parentExpanded by remember{ mutableStateOf(false) }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxSize()) {
         Box(
             modifier = Modifier
@@ -807,6 +864,41 @@ fun editScreen(settingsWidth: Double, settingsHeight: Double, onClose: () -> Uni
                             newName = it
                         }
                     )
+                    possibleParents.add("All items")
+                    items.forEach {
+                        if(it.type == "folder") possibleParents.add(it.name)
+                    }
+                    Text(text = "Item Parent/Folder:")
+                    ExposedDropdownMenuBox(
+                        expanded = parentExpanded,
+                        onExpandedChange = {
+                            parentExpanded = !parentExpanded
+                        }
+                    ) {
+                        TextField(
+                            value = item.parent,
+                            onValueChange = {},
+                            readOnly = true,
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = parentExpanded) },
+                            modifier = Modifier.menuAnchor()
+                        )
+
+                        ExposedDropdownMenu(
+                            expanded = parentExpanded,
+                            onDismissRequest = { parentExpanded = false }
+                        ) {
+                            possibleParents.forEach { par ->
+                                DropdownMenuItem(
+                                    text = { Text(text = par) },
+                                    onClick = {
+                                        item.parent = par
+                                        parentExpanded = false
+                                        onClose()
+                                    }
+                                )
+                            }
+                        }
+                    }
                 } else {
                     newName = item.items[index].name
                     TextField(
@@ -818,6 +910,61 @@ fun editScreen(settingsWidth: Double, settingsHeight: Double, onClose: () -> Uni
                             newName = it
                         }
                     )
+                    items.forEach {
+                        if(it.type == "checklist") possibleParents.add(it.name)
+                    }
+                    Text(text = "List This Belongs To:")
+                    ExposedDropdownMenuBox(
+                        expanded = parentExpanded,
+                        onExpandedChange = {
+                            parentExpanded = !parentExpanded
+                        }
+                    ) {
+                        TextField(
+                            value = item.name,
+                            onValueChange = {},
+                            readOnly = true,
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = parentExpanded) },
+                            modifier = Modifier.menuAnchor()
+                        )
+
+                        ExposedDropdownMenu(
+                            expanded = parentExpanded,
+                            onDismissRequest = { parentExpanded = false }
+                        ) {
+                            possibleParents.forEach { par ->
+                                DropdownMenuItem(
+                                    text = { Text(text = par) },
+                                    onClick = {
+                                        for(i in 0 until items.size) {
+                                            if(items[i].name == par) {
+                                                for(j in index until item.items.size) {
+                                                    item.items[j].position -= 1
+                                                }
+                                                when (moveCompleteItemsSelect) {
+                                                    "Bottom" -> {
+                                                        item.items[index].position = 0
+                                                        items[i].items.forEach {
+                                                            it.position += 1
+                                                        }
+                                                        items[i].items.add(item.items[index])
+                                                    }
+                                                    "Top" -> {
+                                                        item.items[index].position = items[i].items.size
+                                                        items[i].items.add(item.items[index])}
+                                                }
+                                                item.items.removeAt(index)
+                                                items[i].items.sortBy { it.position }
+                                                break
+                                            }
+                                        }
+                                        parentExpanded = false
+                                        onClose()
+                                    }
+                                )
+                            }
+                        }
+                    }
                     Text(text = "Task Current Completeness:")
                     newCurrent = item.items[index].completed.toString()
                     TextField(
@@ -874,7 +1021,11 @@ fun editScreen(settingsWidth: Double, settingsHeight: Double, onClose: () -> Uni
     }
 }
 
-private fun deleteCompleted(itemsList: MutableList<GenericItem>, toDelete: MutableList<GenericItem>, context: Context, path: String, activeItems: MutableList<GenericItem>) {
+private fun deleteCompleted(
+    itemsList: MutableList<GenericItem>,
+    toDelete: MutableList<GenericItem>,
+    context: Context
+) {
     Log.i("DELETE", "toDelete list = $toDelete")
     while(toDelete.isNotEmpty()) {
         for (i in itemsList.indexOf(toDelete[0]) + 1 until itemsList.size) {
@@ -883,13 +1034,20 @@ private fun deleteCompleted(itemsList: MutableList<GenericItem>, toDelete: Mutab
         Log.i("DELETE", "Deleted item: ${toDelete[0]} at index: ${itemsList.indexOf(toDelete[0])}")
         itemsList.removeAt(itemsList.indexOf(toDelete[0]))
         toDelete.removeAt(0)
-        saveItems(context, itemsList, path, activeItems)
+        saveItems(context, itemsList)
     }
 }
 
 /*Iterate over current checklist and perform actions on completed tasks according to settings. Do same for handling completed checklists*/
-private fun handleCompletedItems(autoDelListTime: String, autoDelListSelect: String, moveCompleteItemsSelect: String, activeItems: MutableList<GenericItem>,
-                                 selectedItemIndex: Int, itemsList: MutableList<GenericItem>, context: Context, path: String, i: Int, onRedraw: () -> Unit) {
+private fun handleCompletedItems(
+    moveCompleteItemsSelect: String,
+    activeItems: MutableList<GenericItem>,
+    selectedItemIndex: Int,
+    itemsList: MutableList<GenericItem>,
+    context: Context,
+    i: Int,
+    onRedraw: () -> Unit
+) {
     if(activeItems[selectedItemIndex].items[i].completed >= activeItems[selectedItemIndex].items[i].max) {
         when (moveCompleteItemsSelect) {
             "Bottom" -> {
@@ -917,13 +1075,13 @@ private fun handleCompletedItems(autoDelListTime: String, autoDelListSelect: Str
     if(isCompletedList(activeItems[selectedItemIndex])) {
         activeItems[selectedItemIndex].timeCompleted = System.currentTimeMillis()
     }
-    saveItems(context, itemsList, path, activeItems)
+    saveItems(context, itemsList)
 }
 
 private fun rebuildActiveItems(items: MutableList<GenericItem>, activeItems: MutableList<GenericItem>, path: String) {
     activeItems.clear()
-    var parent: String
-    var parentItem = GenericItem("null", 0, "null", "null", 0L, mutableListOf<ListItem>())
+    val parent: String
+    var parentItem = GenericItem("null", 0, "null", "null", 0L, mutableListOf())
     items.forEach {
         if(it.name == path.substringAfterLast('/')) {
             parentItem = it
@@ -956,7 +1114,7 @@ private fun createNewItem(
             activeItems[selectedItemIndex].items.add(ListItem(name = named, 0, 0, max))
             activeItems[selectedItemIndex].items.sortBy {it.position}
         } else activeItems[selectedItemIndex].items.add(ListItem(name = named, activeItems[selectedItemIndex].items.lastIndex + 1, 0, max))
-        saveItems(context, itemsList, path, activeItems)
+        saveItems(context, itemsList)
         Toast.makeText(context, "Added task: $named to ${activeItems[selectedItemIndex].name}", Toast.LENGTH_SHORT).show()
     } else{
         itemsList.add(GenericItem(
@@ -967,13 +1125,16 @@ private fun createNewItem(
             timeCompleted = 0L,
             items = mutableListOf()
         ))
-        saveItems(context, itemsList, path, activeItems)
+        saveItems(context, itemsList)
         Toast.makeText(context, "Added item: $named to ${path.substringAfterLast('/')}", Toast.LENGTH_SHORT).show()
         rebuildActiveItems(itemsList, activeItems, path)
     }
 }
 
-private fun saveItems(context: Context, itemsList: MutableList<GenericItem>, path: String, activeItems: MutableList<GenericItem>) {
+private fun saveItems(
+    context: Context,
+    itemsList: MutableList<GenericItem>
+) {
     try {
         val fileName = "items.txt"
         val file = File(context.filesDir, fileName)
@@ -1022,10 +1183,10 @@ private fun loadItems(context: Context, items: MutableList<GenericItem>, path: S
         } else {
             var line: String
             line = reader.readLine()
-            while (line != null && line != EndItems) {
+            while (line != EndItems) {
                 var lineNum = 0
-                var loadingItem = GenericItem("null", 0, "All items", "checklist", 0L, mutableListOf())
-                while(line != null && line != EndItem && line != EndItems) {
+                val loadingItem = GenericItem("null", 0, "All items", "checklist", 0L, mutableListOf())
+                while(line != EndItem && line != EndItems) {
                     var innerLineNum = 0
                     var loadingListItem = ListItem("null", 0, 0, 0)
                     when (lineNum) {
@@ -1035,7 +1196,7 @@ private fun loadItems(context: Context, items: MutableList<GenericItem>, path: S
                         3 -> loadingItem.type = line.substringBeforeLast('\n')
                         4 -> loadingItem.timeCompleted = line.toLong()
                         else -> {
-                            while(line != null && line != EndItem && line != EndItems) {
+                            while(line != EndItem && line != EndItems) {
                                 when(innerLineNum) {
                                     0 -> loadingListItem.name = line.substringBeforeLast('\n')
                                     1 -> loadingListItem.position = line.toInt()
