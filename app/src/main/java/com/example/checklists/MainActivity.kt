@@ -12,6 +12,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -43,6 +45,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -51,8 +54,10 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import java.io.BufferedReader
 import java.io.BufferedWriter
 import java.io.File
@@ -61,6 +66,7 @@ import java.io.FileWriter
 import java.io.IOException
 import java.lang.IllegalArgumentException
 import java.lang.NumberFormatException
+import kotlin.math.roundToInt
 
 /*ListItem is how items in lists are stored in memory*/
 data class ListItem(
@@ -91,6 +97,8 @@ const val EndItems = "ENDOFITEMS"
 const val OneMin = 60 * 1000L
 const val OneHour = 60 * OneMin
 const val OneDay = 24 * OneHour
+/*Value defining temp path value to avoid errors when moving items*/
+const val TempPath = "path_FIX"
 
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -115,6 +123,7 @@ fun MainScreen() {
     var activeItems = mutableListOf<GenericItem>()
     var path by remember{mutableStateOf("All items")}
     var items = mutableListOf<GenericItem>()
+    Log.i("INIT", "Reset/cleared items")
     val configuration = LocalConfiguration.current
     val screenHeight = configuration.screenHeightDp
     val screenWidth = configuration.screenWidthDp
@@ -232,7 +241,7 @@ fun MainScreen() {
                     if(!inList) {selectedItemIndex = -1}
                 } else{
                     rebuildActiveItems(items, activeItems, path)
-                    activeItems[selectedItemIndex].items.forEach {
+                    if(path.substringAfterLast('/') != TempPath) activeItems[selectedItemIndex].items.forEach {
                     drawItems(
                         activeItems[selectedItemIndex],
                         screenWidth,
@@ -242,7 +251,9 @@ fun MainScreen() {
                         },
                         color,
                         index,
-                        inList, completedColor, settingsWidth, settingsHeight, context, path, items, activeItems
+                        inList, completedColor, settingsWidth, settingsHeight, context, path, items, activeItems, onRedraw = {
+                            path += "/$TempPath"
+                        }
                     )
                     index++
                     color = if (color == Color.LightGray) Color.Gray else Color.LightGray
@@ -266,7 +277,9 @@ fun MainScreen() {
                                 screenWidth,
                                 bannerHeight,
                                 onItemSelect = { itemSelected -> selectedItemIndex = itemSelected },
-                                color, index, inList, completedColor, settingsWidth, settingsHeight, context, path, items, activeItems
+                                color, index, inList, completedColor, settingsWidth, settingsHeight, context, path, items, activeItems, onRedraw = {
+                                    path += "/$TempPath"
+                                }
                             )
                             index++
                             color = if (color == Color.LightGray) Color.Gray else Color.LightGray
@@ -286,11 +299,12 @@ fun MainScreen() {
     if (settingsOpen) {
         settingsScreen(settingsWidth, settingsHeight, context, onClose = {settingsOpen = false}, onDelTimeChange = {newTime -> autoDelListTime = newTime},
             onDelListSelectChange = {newDelListSelect -> autoDelListSelect = newDelListSelect}, onMoveCompleteItemsSelectChange = {newMoveCompSelect -> moveCompleteItemsSelect = newMoveCompSelect},
-            autoDelListTime, autoDelListSelect, moveCompleteItemsSelect, completedColor)
+            autoDelListTime, autoDelListSelect, moveCompleteItemsSelect, completedColor, items, path, activeItems)
     }
     if (createOpen) {
         createScreen(settingsWidth, settingsHeight, context, items, onClose = {createOpen = false}, path, activeItems, inList, selectedItemIndex, moveCompleteItemsSelect)
     }
+    if(path.substringAfterLast('/') == TempPath) path = path.substringBeforeLast('/')
 }
 
 @Composable
@@ -413,7 +427,7 @@ fun createScreen(settingsWidth: Double, settingsHeight: Double, context: Context
 @Composable
 fun settingsScreen(settingsWidth: Double, settingsHeight: Double, context: Context, onClose: () -> Unit, onDelTimeChange: (String) -> Unit,
                    onDelListSelectChange: (String) -> Unit, onMoveCompleteItemsSelectChange: (String) -> Unit, defDelTime: String, defDelListSelect: String,
-                   defMoveCompleteItemsSelect: String, defCompletedColor: Color){
+                   defMoveCompleteItemsSelect: String, defCompletedColor: Color, itemsList: MutableList<GenericItem>, path: String, activeItems: MutableList<GenericItem>){
     var autoDelListTime by rememberSaveable { mutableStateOf(defDelTime) }
     val delUnits = arrayOf("Minutes", "Hours", "Days")
     var autoDelListExpanded by remember { mutableStateOf(false) }
@@ -582,6 +596,12 @@ fun settingsScreen(settingsWidth: Double, settingsHeight: Double, context: Conte
                         }
                     }
                 )
+                Button(onClick = {
+                    itemsList.clear()
+                    saveItems(context, itemsList, path, activeItems)
+                }) {
+                    Text(text = "Wipe All Data")
+                }
             }
         }
     }
@@ -629,12 +649,16 @@ fun drawItems(
     color: Color,
     index: Int,
     inList: Boolean, completedColor: Color, settingsWidth: Double, settingsHeight: Double,
-    context: Context, path: String, items: MutableList<GenericItem>, activeItems: MutableList<GenericItem>
+    context: Context, path: String, items: MutableList<GenericItem>, activeItems: MutableList<GenericItem>, onRedraw: () -> Unit
 ) {
     var editOpen by remember { mutableStateOf(false) }
+    var editVisible by remember { mutableStateOf(false) }
     var realColor = color
     if(inList && item.items[index].completed >= item.items[index].max) realColor = completedColor
     if(!inList && isCompletedList(item)) realColor = completedColor
+    var offsetX by remember { mutableStateOf(0f) }
+    var offsetY by remember { mutableStateOf(0f) }
+    var zInd by remember{ mutableStateOf(0f) }
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Start,
@@ -642,20 +666,80 @@ fun drawItems(
         Modifier
             .background(realColor)
             .size(width = screenWidth.dp, height = bannerHeight.dp)
-            .combinedClickable(onClick = { onItemSelect(index) })
+            .combinedClickable(
+                onClick = { onItemSelect(index) },
+                onLongClick = { editVisible = true })
+            .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
+            .zIndex(zInd)
+            .pointerInput(Unit) {
+                detectDragGestures(onDragStart = {
+                    zInd = 1f
+                }, onDrag = { change, dragAmount ->
+                    change.consume()
+                    offsetX += dragAmount.x
+                    offsetY += dragAmount.y
+                }, onDragEnd = {
+                    zInd = 0f
+                    val newRowPosition = (offsetY / (bannerHeight * 3.8) + index).roundToInt()
+                    if (!inList) {
+                        if (newRowPosition < item.position) {
+                            for (i in newRowPosition until item.position) {
+                                activeItems[i].position += 1
+                            }
+                        } else if (newRowPosition > item.position) {
+                            for (i in item.position + 1 until newRowPosition + 1) {
+                                activeItems[i].position -= 1
+                            }
+                        }
+                        item.position = newRowPosition
+                        items.sortBy { it.position }
+                    } else {
+                        if (newRowPosition < item.items[index].position) {
+                            for (i in newRowPosition until item.items[index].position) {
+                                item.items[i].position += 1
+                            }
+                        } else if (newRowPosition > item.items[index].position) {
+                            for (i in item.items[index].position + 1 until newRowPosition + 1) {
+                                item.items[i].position -= 1
+                            }
+                        }
+                        item.items[index].position = newRowPosition
+                        item.items.sortBy { it.position }
+                    }
+                    Log.i("DRAGGED", "Dragged index: $index")
+                    saveItems(context, items, path, activeItems)
+                    offsetX = 0f
+                    offsetY = 0f
+                    onRedraw()
+                })
+            }
     ) {
         drawItemIcon(item, index, inList)
         Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
-            Button(onClick = { editOpen = true }) {
-                Text(text = "Edit...")
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                if (editVisible) {
+                    showEditButton(onClick = { editOpen = true }, on2ndClick = {editVisible = false})
+                }
             }
         }
     }
     if(editOpen) {
+        editVisible = false
         editScreen(settingsWidth, settingsHeight, onClose = {
             editOpen = false
             saveItems(context, items, path, activeItems)
+            onRedraw()
         }, inList, item, index, items, context)
+    }
+}
+
+@Composable
+fun showEditButton(onClick: () -> Unit, on2ndClick: () -> Unit) {
+    Button(onClick = { onClick() }) {
+        Text(text = "Edit...")
+    }
+    Button(onClick = { on2ndClick() }) {
+        Text(text = "Hide")
     }
 }
 
@@ -755,12 +839,29 @@ fun editScreen(settingsWidth: Double, settingsHeight: Double, onClose: () -> Uni
                         }
                     )
                 }
+                Button(onClick = {
+                     if(inList) {
+                         for (i in index + 1 until item.items.size) {
+                             item.items[i].position -= 1
+                         }
+                         item.items.removeAt(index)
+                     }
+                    else {
+                         for (i in index + 1 until items.size) {
+                             items[i].position -= 1
+                         }
+                         items.removeAt(index)
+                    }
+                }) {
+                    Text(text = "Delete Item")
+                }
             }
         }
     }
 }
 
 private fun deleteCompleted(itemsList: MutableList<GenericItem>, toDelete: MutableList<GenericItem>, context: Context, path: String, activeItems: MutableList<GenericItem>) {
+    Log.i("DELETE", "toDelete list = $toDelete")
     while(toDelete.isNotEmpty()) {
         for (i in itemsList.indexOf(toDelete[0]) + 1 until itemsList.size) {
             itemsList[i].position -= 1
@@ -808,7 +909,7 @@ private fun rebuildActiveItems(items: MutableList<GenericItem>, activeItems: Mut
     var parent: String
     var parentItem = GenericItem("null", 0, "null", "null", 0L, mutableListOf<ListItem>())
     items.forEach {
-        if(it.name.equals(path.substringAfterLast('/'))) {
+        if(it.name == path.substringAfterLast('/')) {
             parentItem = it
         }
     }
@@ -844,7 +945,7 @@ private fun createNewItem(
     } else{
         itemsList.add(GenericItem(
             name = named,
-            position = itemsList.lastIndex + 1,
+            position = activeItems.lastIndex + 1,
             parent = path.substringAfterLast('/'),
             type = typed.lowercase(),
             timeCompleted = 0L,
@@ -853,6 +954,7 @@ private fun createNewItem(
         saveItems(context, itemsList, path, activeItems)
         Toast.makeText(context, "Added item: $named to ${path.substringAfterLast('/')}", Toast.LENGTH_SHORT).show()
     }
+    rebuildActiveItems(itemsList, activeItems, path)
 }
 
 private fun saveItems(context: Context, itemsList: MutableList<GenericItem>, path: String, activeItems: MutableList<GenericItem>) {
