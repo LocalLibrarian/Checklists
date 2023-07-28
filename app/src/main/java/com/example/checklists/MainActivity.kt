@@ -938,28 +938,39 @@ fun EditScreen(settingsWidth: Double, settingsHeight: Double, onClose: () -> Uni
                                     onClick = {
                                         for(i in 0 until items.size) {
                                             if(items[i].name == par) {
-                                                for(j in index until item.items.size) {
-                                                    item.items[j].position -= 1
+                                                val illegalNames = mutableListOf<String>()
+                                                items[i].items.forEach { illegalNames.add(it.name) }
+                                                if(item.items[index].name in illegalNames) {
+                                                    Toast.makeText(context, "Names must be unique. That name is already in use in the targeted list.", Toast.LENGTH_LONG).show()
+                                                    break
                                                 }
-                                                when (moveCompleteItemsSelect) {
-                                                    "Bottom" -> {
-                                                        item.items[index].position = 0
-                                                        items[i].items.forEach {
-                                                            it.position += 1
-                                                        }
-                                                        items[i].items.add(item.items[index])
+                                                else {
+                                                    for (j in index until item.items.size) {
+                                                        item.items[j].position -= 1
                                                     }
-                                                    "Top" -> {
-                                                        item.items[index].position = items[i].items.size
-                                                        items[i].items.add(item.items[index])}
+                                                    when (moveCompleteItemsSelect) {
+                                                        "Bottom" -> {
+                                                            item.items[index].position = 0
+                                                            items[i].items.forEach {
+                                                                it.position += 1
+                                                            }
+                                                            items[i].items.add(item.items[index])
+                                                        }
+
+                                                        "Top" -> {
+                                                            item.items[index].position =
+                                                                items[i].items.size
+                                                            items[i].items.add(item.items[index])
+                                                        }
+                                                    }
+                                                    item.items.removeAt(index)
+                                                    items[i].items.sortBy { it.position }
+                                                    break
                                                 }
-                                                item.items.removeAt(index)
-                                                items[i].items.sortBy { it.position }
-                                                break
                                             }
+                                            onClose()
                                         }
                                         parentExpanded = false
-                                        onClose()
                                     }
                                 )
                             }
@@ -1107,29 +1118,59 @@ private fun createNewItem(
     moveCompleteItemsSelect: String,
     onRedraw: () -> Unit
 ) {
+    val illegalNames = mutableListOf<String>()
     if(inList) {
-        if(moveCompleteItemsSelect == "Bottom") {
-            activeItems[selectedItemIndex].items.forEach {
-                it.position += 1
-            }
-            activeItems[selectedItemIndex].items.add(ListItem(name = named, 0, 0, max))
-            activeItems[selectedItemIndex].items.sortBy {it.position}
-        } else activeItems[selectedItemIndex].items.add(ListItem(name = named, activeItems[selectedItemIndex].items.lastIndex + 1, 0, max))
-        saveItems(context, itemsList)
-        Toast.makeText(context, "Added task: $named to ${activeItems[selectedItemIndex].name}", Toast.LENGTH_SHORT).show()
-        onRedraw()
+        activeItems[selectedItemIndex].items.forEach { illegalNames.add(it.name) }
+        if(named in illegalNames) {
+            Toast.makeText(context, "Names must be unique. That name is already in use.", Toast.LENGTH_LONG).show()
+        }
+        else {
+            if (moveCompleteItemsSelect == "Bottom") {
+                activeItems[selectedItemIndex].items.forEach {
+                    it.position += 1
+                }
+                activeItems[selectedItemIndex].items.add(ListItem(name = named, 0, 0, max))
+                activeItems[selectedItemIndex].items.sortBy { it.position }
+            } else activeItems[selectedItemIndex].items.add(
+                ListItem(
+                    name = named,
+                    activeItems[selectedItemIndex].items.lastIndex + 1,
+                    0,
+                    max
+                )
+            )
+            saveItems(context, itemsList)
+            Toast.makeText(
+                context,
+                "Added task: $named to ${activeItems[selectedItemIndex].name}",
+                Toast.LENGTH_SHORT
+            ).show()
+            onRedraw()
+        }
     } else{
-        itemsList.add(GenericItem(
-            name = named,
-            position = activeItems.lastIndex + 1,
-            parent = path.substringAfterLast('/'),
-            type = typed.lowercase(),
-            timeCompleted = 0L,
-            items = mutableListOf()
-        ))
-        saveItems(context, itemsList)
-        Toast.makeText(context, "Added item: $named to ${path.substringAfterLast('/')}", Toast.LENGTH_SHORT).show()
-        rebuildActiveItems(itemsList, activeItems, path)
+        itemsList.forEach { illegalNames.add(it.name) }
+        if(named in illegalNames) {
+            Toast.makeText(context, "Names must be unique. That name is already in use.", Toast.LENGTH_LONG).show()
+        }
+        else {
+            itemsList.add(
+                GenericItem(
+                    name = named,
+                    position = activeItems.lastIndex + 1,
+                    parent = path.substringAfterLast('/'),
+                    type = typed.lowercase(),
+                    timeCompleted = 0L,
+                    items = mutableListOf()
+                )
+            )
+            saveItems(context, itemsList)
+            Toast.makeText(
+                context,
+                "Added item: $named to ${path.substringAfterLast('/')}",
+                Toast.LENGTH_SHORT
+            ).show()
+            rebuildActiveItems(itemsList, activeItems, path)
+        }
     }
 }
 
@@ -1181,8 +1222,7 @@ private fun loadItems(context: Context, items: MutableList<GenericItem>, path: S
         val file = File(context.filesDir, fileName)
         val reader = BufferedReader(FileReader(file))
         if (!file.exists()) {
-            Log.w("LOAD", "Could not find/create items.txt file")
-            Toast.makeText(context, "Error loading items!", Toast.LENGTH_SHORT).show()
+            Log.w("LOAD", "No saved items found, could be first app use?")
             reader.close()
         } else {
             var line: String
@@ -1233,7 +1273,8 @@ private fun loadItems(context: Context, items: MutableList<GenericItem>, path: S
         }
     } catch (e: IOException) {
         e.printStackTrace()
-        Log.w("LOAD", "No saved items found, could be first app use?")
+        Log.w("LOAD", "Error loading items")
+        Toast.makeText(context, "Error loading items!", Toast.LENGTH_SHORT).show()
     }
 }
 
