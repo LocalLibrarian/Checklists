@@ -343,7 +343,7 @@ fun MainScreen() {
         )
     }
     if (createOpen) {
-        CreateScreen(settingsWidth, settingsHeight, context, items, onClose = {createOpen = false}, path, activeItems, inList, selectedItemIndex, moveCompleteItemsSelect)
+        CreateScreen(settingsWidth, settingsHeight, context, items, onClose = {createOpen = false}, path, activeItems, inList, selectedItemIndex, moveCompleteItemsSelect, onRedraw = {path += "/$TempPath2"})
     }
     if(path.substringAfterLast('/') == TempPath) path = path.substringBeforeLast('/')
 }
@@ -366,7 +366,7 @@ fun DrawPath(path: String, onUse: (String) -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CreateScreen(settingsWidth: Double, settingsHeight: Double, context: Context, items: MutableList<GenericItem>, onClose: () -> Unit, path: String, activeItems: MutableList<GenericItem>, inList: Boolean, selectedItemIndex: Int, moveCompleteItemsSelect: String) {
+fun CreateScreen(settingsWidth: Double, settingsHeight: Double, context: Context, items: MutableList<GenericItem>, onClose: () -> Unit, path: String, activeItems: MutableList<GenericItem>, inList: Boolean, selectedItemIndex: Int, moveCompleteItemsSelect: String, onRedraw: () -> Unit) {
     var newItemName by rememberSaveable { mutableStateOf("New Item") }
     var maxComplete by rememberSaveable { mutableStateOf("1") }
     val itemTypes = arrayOf("Checklist", "Folder")
@@ -455,7 +455,7 @@ fun CreateScreen(settingsWidth: Double, settingsHeight: Double, context: Context
                     }
                 }
                 Button(
-                    onClick = { createNewItem(items, newItemName, newItemSelectedType, context, path, activeItems, inList, selectedItemIndex, maxComplete.toInt(), moveCompleteItemsSelect) }
+                    onClick = { createNewItem(items, newItemName, newItemSelectedType, context, path, activeItems, inList, selectedItemIndex, maxComplete.toInt(), moveCompleteItemsSelect, onRedraw = {onRedraw()}) }
                 ) {
                     Text("Create")
                 }
@@ -1104,7 +1104,8 @@ private fun createNewItem(
     inList: Boolean,
     selectedItemIndex: Int,
     max: Int,
-    moveCompleteItemsSelect: String
+    moveCompleteItemsSelect: String,
+    onRedraw: () -> Unit
 ) {
     if(inList) {
         if(moveCompleteItemsSelect == "Bottom") {
@@ -1116,6 +1117,7 @@ private fun createNewItem(
         } else activeItems[selectedItemIndex].items.add(ListItem(name = named, activeItems[selectedItemIndex].items.lastIndex + 1, 0, max))
         saveItems(context, itemsList)
         Toast.makeText(context, "Added task: $named to ${activeItems[selectedItemIndex].name}", Toast.LENGTH_SHORT).show()
+        onRedraw()
     } else{
         itemsList.add(GenericItem(
             name = named,
@@ -1169,6 +1171,7 @@ private fun saveItems(
     } catch (e: IOException) {
         e.printStackTrace()
         Toast.makeText(context, "Error saving items!", Toast.LENGTH_SHORT).show()
+        Log.w("SAVE", "Could not save items")
     }
 }
 
@@ -1178,7 +1181,8 @@ private fun loadItems(context: Context, items: MutableList<GenericItem>, path: S
         val file = File(context.filesDir, fileName)
         val reader = BufferedReader(FileReader(file))
         if (!file.exists()) {
-            Log.w("LOAD", "Could not find items.txt file")
+            Log.w("LOAD", "Could not find/create items.txt file")
+            Toast.makeText(context, "Error loading items!", Toast.LENGTH_SHORT).show()
             reader.close()
         } else {
             var line: String
@@ -1229,7 +1233,7 @@ private fun loadItems(context: Context, items: MutableList<GenericItem>, path: S
         }
     } catch (e: IOException) {
         e.printStackTrace()
-        Toast.makeText(context, "Error loading items!", Toast.LENGTH_SHORT).show()
+        Log.w("LOAD", "No saved items found, could be first app use?")
     }
 }
 
@@ -1253,6 +1257,7 @@ private fun saveSettings(context: Context, autoDelListTime: String, autoDelListS
     } catch (e: IOException) {
         e.printStackTrace()
         Toast.makeText(context, "Error saving settings!", Toast.LENGTH_SHORT).show()
+        Log.w("SAVE", "Could not save settings")
     }
 }
 
@@ -1267,7 +1272,7 @@ private fun loadSettings(context: Context): List<String> {
         }
     } catch (e: IOException) {
         e.printStackTrace()
-        Toast.makeText(context, "Error loading settings!", Toast.LENGTH_SHORT).show()
+        Log.w("LOAD", "No saved settings found")
         emptyList()
     }
 }
