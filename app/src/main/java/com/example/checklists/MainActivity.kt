@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -65,8 +64,6 @@ import java.io.File
 import java.io.FileReader
 import java.io.FileWriter
 import java.io.IOException
-import java.lang.IllegalArgumentException
-import java.lang.NumberFormatException
 import kotlin.math.roundToInt
 
 /*ListItem is how items in lists are stored in memory*/
@@ -101,6 +98,9 @@ const val OneDay = 24 * OneHour
 /*Values defining temp path strings to avoid errors when moving items or forcing screen redraws*/
 const val TempPath = "path_FIX"
 const val TempPath2 = "path_FIX2"
+/*Values defining font sizes*/
+val titleFontSize = 22.sp
+val subTitleFontSize = 20.sp
 
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -137,7 +137,6 @@ fun MainScreen() {
     var autoDelListSelect = "Minutes"
     var moveCompleteItemsSelect = "Bottom"
     val context = LocalContext.current
-    val titleFontSize = 22.sp
     var completedColor = Color.Green
     val settingsSaved= loadSettings(context)
     var choseTutorial by remember{ mutableStateOf(false) }
@@ -162,7 +161,7 @@ fun MainScreen() {
                 painter = painterResource(R.drawable.settingsicon),
                 contentDescription = "Settings Icon",
                 modifier = Modifier
-                    .height((bannerHeight / 4).dp)
+                    .size((bannerHeight / 4).dp)
                     .clickable(enabled = true, onClick = { settingsOpen = true })
             )
             ClickableText(
@@ -199,7 +198,7 @@ fun MainScreen() {
                 painter = painterResource(R.drawable.addicon),
                 contentDescription = "Add Item Icon",
                 modifier = Modifier
-                    .height((bannerHeight / 4).dp)
+                    .size((bannerHeight / 4).dp)
                     .clickable(enabled = true, onClick = { createOpen = true })
             )
         } /*End of header drawing*/
@@ -389,7 +388,8 @@ fun CreateScreen(settingsWidth: Double, settingsHeight: Double, context: Context
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Top
             ) {
-                Text(text = "Create New")
+                Text(text = "Create New",
+                    fontSize = subTitleFontSize)
                 Box(
                     modifier = Modifier
                         .size(width = settingsWidth.dp, height = 5.dp)
@@ -499,7 +499,8 @@ fun SettingsScreen(
                 )
             }
             Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Top) {
-                Text(text = "Settings")
+                Text(text = "Settings",
+                    fontSize = subTitleFontSize)
                 Box(
                     modifier = Modifier
                         .size(width = settingsWidth.dp, height = 5.dp)
@@ -670,12 +671,14 @@ fun DrawItemIcon(item: GenericItem, index: Int, inList: Boolean) {
     else if(item.type == "checklist") {
         Image(
             painter = painterResource(R.drawable.listicon),
-            contentDescription = "List Icon"
+            contentDescription = "List Icon",
+            Modifier.padding(16.dp).size(30.dp)
         )
     } else{
         Image(
             painter = painterResource(R.drawable.foldericon),
-            contentDescription = "Folder Icon"
+            contentDescription = "Folder Icon",
+            Modifier.padding(16.dp).size(30.dp)
         )
     }
     Text(text = if(!inList) item.name else item.items[index].name,
@@ -845,7 +848,8 @@ fun TutorialScreen(settingsWidth: Double, settingsHeight: Double, onClose: () ->
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Top
             ) {
-                Text(text = "Tutorial")
+                Text(text = "Tutorial",
+                    fontSize = subTitleFontSize)
                 Box(
                     modifier = Modifier
                         .size(width = settingsWidth.dp, height = 5.dp)
@@ -963,7 +967,7 @@ fun EditScreen(settingsWidth: Double, settingsHeight: Double, onClose: () -> Uni
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxSize()) {
         Box(
             modifier = Modifier
-                .size(width = settingsWidth.dp, height = settingsHeight.dp)
+                .size(width = settingsWidth.dp, height = (settingsHeight * 0.75).dp)
                 .background(Color(216, 216, 216, 255))
         ) {
             Row(
@@ -983,7 +987,8 @@ fun EditScreen(settingsWidth: Double, settingsHeight: Double, onClose: () -> Uni
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Top
             ) {
-                Text(text = "Edit Item")
+                Text(text = "Edit Item",
+                    fontSize = subTitleFontSize)
                 Box(
                     modifier = Modifier
                         .size(width = settingsWidth.dp, height = 5.dp)
