@@ -98,7 +98,7 @@ const val EndItems = "ENDOFITEMS"
 const val OneMin = 60 * 1000L
 const val OneHour = 60 * OneMin
 const val OneDay = 24 * OneHour
-/*Value defining temp path values to avoid errors when moving items*/
+/*Values defining temp path strings to avoid errors when moving items or forcing screen redraws*/
 const val TempPath = "path_FIX"
 const val TempPath2 = "path_FIX2"
 
@@ -115,6 +115,7 @@ class MainActivity : AppCompatActivity() {
     }
 }
 
+/*Main init func, calls most others and draws the main screen and its layout*/
 @Composable
 @Preview
 fun MainScreen() {
@@ -124,7 +125,6 @@ fun MainScreen() {
     val activeItems = mutableListOf<GenericItem>()
     var path by remember{mutableStateOf("All items")}
     val items = mutableListOf<GenericItem>()
-    Log.i("INIT", "Reset/cleared items")
     val configuration = LocalConfiguration.current
     val screenHeight = configuration.screenHeightDp
     val screenWidth = configuration.screenWidthDp
@@ -140,15 +140,19 @@ fun MainScreen() {
     val titleFontSize = 22.sp
     var completedColor = Color.Green
     val settingsSaved= loadSettings(context)
+    var choseTutorial by remember{ mutableStateOf(false) }
     if (settingsSaved.isNotEmpty()) {
         autoDelListTime = settingsSaved[0]
         autoDelListSelect = settingsSaved[1]
         moveCompleteItemsSelect = settingsSaved[2]
         completedColor = Color(red = settingsSaved[3].toFloat(), green = settingsSaved[4].toFloat(), blue = settingsSaved[5].toFloat())
     }
+    Log.i("INIT", "Completed full init of global vars")
     Log.i("SETTINGS","Settings now: $autoDelListTime, $autoDelListSelect, $moveCompleteItemsSelect, $completedColor")
-    Column(modifier = Modifier.background(Color.LightGray).fillMaxSize()) {
-        Row(
+    Column(modifier = Modifier
+        .background(Color.LightGray)
+        .fillMaxSize()) {
+        Row( /*Beginning of header drawing*/
             Modifier
                 .background(Color.Blue)
                 .size(width = screenWidth.dp, height = bannerHeight.dp),
@@ -198,22 +202,8 @@ fun MainScreen() {
                     .height((bannerHeight / 4).dp)
                     .clickable(enabled = true, onClick = { createOpen = true })
             )
-        }
-        Row {/*
-            ClickableText(
-                onClick = {
-                    path = path.substringBeforeLast('/')
-                    selectedItemIndex = -1
-                    inList = false
-                },
-                text = buildAnnotatedString {
-                    withStyle(
-                        style = SpanStyle(
-                            color = Color.Black,
-                        )
-                    ) { append(path) }
-                }
-            )*/
+        } /*End of header drawing*/
+        Row { /*Drawing path*/
             val splitPath = path.split('/')
             var buildPath = ""
             splitPath.forEach {
@@ -226,16 +216,16 @@ fun MainScreen() {
                 Text(text = "/")
             }
         }
-        Column(
+        Column( /*Everything else draws from here. Keeps header above everything that way*/
             Modifier
                 .verticalScroll(rememberScrollState())
                 .background(Color.LightGray)
                 .fillMaxSize()) {
-            loadItems(context, items, path, activeItems)
+            if(loadItems(context, items, path, activeItems) || choseTutorial) TutorialScreen(settingsWidth, settingsHeight, onClose = {choseTutorial = false})
             items.sortBy{it.position}
             var color = Color.LightGray
             var index = 0
-            if(selectedItemIndex > -1) {
+            if(selectedItemIndex > -1) { /*Handling clicking something in a folder*/
                 Log.i("SELECT", "Selected item index: $selectedItemIndex")
                 if(!inList) {
                     path += "/${activeItems[selectedItemIndex].name}"
@@ -272,7 +262,7 @@ fun MainScreen() {
                     }
                     if(path.substringAfterLast('/') == TempPath2) path = path.substringBeforeLast('/')
                 }
-            } else {
+            } else { /*Drawing everything with current path as parent*/
                 val toDelete = mutableListOf<GenericItem>()
                 items.forEach {
                     if(it.parent == path.substringAfterLast('/')) {
@@ -313,7 +303,7 @@ fun MainScreen() {
             }
         }
     }
-    if (selectedListItemIndex > -1) {
+    if (selectedListItemIndex > -1) { /*Handling clicking something in a list*/
         Log.d("SELECT", "Selected listItem index: $selectedListItemIndex")
         activeItems[selectedItemIndex].items[selectedListItemIndex].completed += 1
         handleCompletedItems(
@@ -339,15 +329,18 @@ fun MainScreen() {
             autoDelListSelect,
             moveCompleteItemsSelect,
             completedColor,
-            items
+            items,
+            openTutorial = {choseTutorial = true}
         )
     }
     if (createOpen) {
         CreateScreen(settingsWidth, settingsHeight, context, items, onClose = {createOpen = false}, path, activeItems, inList, selectedItemIndex, moveCompleteItemsSelect, onRedraw = {path += "/$TempPath2"})
     }
+    /*Forcing screen redraw*/
     if(path.substringAfterLast('/') == TempPath) path = path.substringBeforeLast('/')
 }
 
+/*Writes the path clickables onto the screen. Clicking one sets the path to it*/
 @Composable
 fun DrawPath(path: String, onUse: (String) -> Unit) {
     ClickableText(
@@ -364,6 +357,7 @@ fun DrawPath(path: String, onUse: (String) -> Unit) {
     )
 }
 
+/*Draws the Add new... button screen*/
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreateScreen(settingsWidth: Double, settingsHeight: Double, context: Context, items: MutableList<GenericItem>, onClose: () -> Unit, path: String, activeItems: MutableList<GenericItem>, inList: Boolean, selectedItemIndex: Int, moveCompleteItemsSelect: String, onRedraw: () -> Unit) {
@@ -464,6 +458,7 @@ fun CreateScreen(settingsWidth: Double, settingsHeight: Double, context: Context
     }
 }
 
+/*Draws Settings button screen*/
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
@@ -478,7 +473,8 @@ fun SettingsScreen(
     defDelListSelect: String,
     defMoveCompleteItemsSelect: String,
     defCompletedColor: Color,
-    itemsList: MutableList<GenericItem>
+    itemsList: MutableList<GenericItem>,
+    openTutorial: () -> Unit
 ){
     var autoDelListTime by rememberSaveable { mutableStateOf(defDelTime) }
     val delUnits = arrayOf("Minutes", "Hours", "Days")
@@ -649,6 +645,12 @@ fun SettingsScreen(
                     }
                 )
                 Button(onClick = {
+                    onClose()
+                    openTutorial()
+                }) {
+                    Text(text = "Open Tutorial")
+                }
+                Button(onClick = {
                     itemsList.clear()
                     saveItems(context, itemsList)
                 }) {
@@ -659,6 +661,7 @@ fun SettingsScreen(
     }
 }
 
+/*Child of DrawItems. Draws icon for GenericItem or complete/max for ListItems and writes name of any item*/
 @Composable
 fun DrawItemIcon(item: GenericItem, index: Int, inList: Boolean) {
     if(inList) {
@@ -679,6 +682,7 @@ fun DrawItemIcon(item: GenericItem, index: Int, inList: Boolean) {
         Modifier.padding(16.dp))
 }
 
+/*Returns true if passed list has all tasks fully completed, false otherwise*/
 fun isCompletedList(list: GenericItem): Boolean {
     var retVal = true
     list.items.forEach {
@@ -691,6 +695,8 @@ fun isCompletedList(list: GenericItem): Boolean {
     return retVal
 }
 
+/*Draws either GenericItems or ListItems depending on inList value. Draws 1 item at a time, must be called multiple times to draw all.
+* Also handles item dragging/movement and rearranging*/
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DrawItems(
@@ -734,7 +740,7 @@ fun DrawItems(
                 onLongClick = { editVisible = true })
             .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
             .pointerInput(Unit) {
-                detectDragGestures(onDragStart = {
+                detectDragGestures(onDragStart = { /*Drag handling*/
                     zInd = 1f
                     Log.i("DRAG", "Began dragging index: $index")
                 }, onDrag = { change, dragAmount ->
@@ -801,6 +807,7 @@ fun DrawItems(
     }
 }
 
+/*Draws Edit... and Hide buttons on items*/
 @Composable
 fun ShowEditButton(onClick: () -> Unit, on2ndClick: () -> Unit) {
     Button(onClick = { onClick() }) {
@@ -811,6 +818,139 @@ fun ShowEditButton(onClick: () -> Unit, on2ndClick: () -> Unit) {
     }
 }
 
+/*Draws the tutorial screen and handles its pages changing*/
+@Composable
+fun TutorialScreen(settingsWidth: Double, settingsHeight: Double, onClose: () -> Unit) {
+    var pageNum by remember{ mutableStateOf(0) }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .size(width = settingsWidth.dp, height = settingsHeight.dp)
+                .background(Color(216, 216, 216, 255))
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.Top,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.closeicon),
+                    contentDescription = "Close Edit Icon",
+                    modifier = Modifier
+                        .clickable(enabled = true, onClick = { onClose() })
+                )
+            }
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Top
+            ) {
+                Text(text = "Tutorial")
+                Box(
+                    modifier = Modifier
+                        .size(width = settingsWidth.dp, height = 5.dp)
+                        .background(Color(204, 204, 204, 255))
+                )
+                Column(modifier = Modifier
+                    .verticalScroll(rememberScrollState())) {
+                    var subTitle = "null"
+                    var tutText = "null"
+                    when (pageNum) {
+                        0 -> {
+                            subTitle = "Welcome to Checklists!"
+                            tutText =
+                                ("It looks like this is your first time using the app. Continue reading to learn how to use the app, or, if you prefer, close this tutorial "
+                                        + "by tapping on the \"X\" icon in the top-right corner. You can navigate the pages of this tutorial by tapping on the \"Next Page\" and \"Previous Page\" buttons on the bottom.\n\n" +
+                                        "You can also re-open this tutorial at any time via the \"Settings\" menu that is always on the top-left of the screen.\n\n" +
+                                        "We will begin on the next page by going over the main screen behind this Tutorial box.")
+                        }
+
+                        1 -> {
+                            subTitle = "Main Screen"
+                            tutText =
+                                ("The Main Screen is where you do almost everything in Checklists. From this screen, you can tap on lists and folders to " +
+                                        "open them and view their contents.\n\nTo go back from a folder or list, tap on where you would like to go to on the text " +
+                                        "that says \"All items/example folder/list 1\". For example, to go back to the \"example folder\", tap on \"example folder\", " +
+                                        "and the same for \"All items\".\n\nWhen in a list, you simply tap on tasks to add 1 to their completion counter. Once they " +
+                                        "reach their max completion, they are marked as complete by having a different colored background and possibly changing where they " +
+                                        "are in the list, depending on your settings. Lists with all tasks completed also color differently and will delete after some " +
+                                        "time, depending on settings.\n\nYou can also tap and hold on tasks/lists/folders to edit them after tapping \"Edit...\". This " +
+                                        "allows you to change their name, what folder/list they belong to, and current completion/max completeness of tasks, as " +
+                                        "well as delete items.\n\nNOTE: when typing in many text boxes in this app, you may have to tap and hold to select all " +
+                                        "text/numbers in the box, then start typing in order to properly enter what information you want.\n\nLastly, you can also " +
+                                        "drag lists and tasks to re-order them on screen.")
+                        }
+
+                        2 -> {
+                            subTitle = "Settings"
+                            tutText = ("In the Settings menu, accessed via the button in the top-left, you can change how various things in the app work. "
+                                    + "The \"Auto-delete completed lists after\" setting " +
+                                    "controls how long to wait until completed lists are automatically deleted. You can type how many units " +
+                                    "of time you want to wait, and then select which unit (Minutes, Hours, or Days) to wait in that time for.\n\nYou can also " +
+                                    "choose where to move completed list items to. You can either automatically move them to the Top or Bottom of the list, " +
+                                    "or choose not to move them at all. This also affects where newly-created items are placed in the list.\n\nYou may also " +
+                                    "change what color completed items change to via RGB values with a preview of the color on the Settings screen.\n\nThis " +
+                                    "tutorial can be re-opened on the Settings screen as well.\n\nLastly, you may delete all lists, folders, and tasks with the " +
+                                    "\"Wipe All Data\" button.")
+                        }
+
+                        3 -> {
+                            subTitle = "Add new..."
+                            tutText = ("The Add New screen, accessed via the button in the top-right, is where you create new lists, folders, and " +
+                                    "tasks/list items. When this button is tapped on and you are not in a list, you can name and create a new list or folder " +
+                                    "in the current folder (or add it to \"All items\").\n\nWhen in a list, you name the task you are adding and define its " +
+                                    "maximum completeness, which is how many times it can be tapped on before being marked as complete.\n\nClick create when " +
+                                    "done in the Add New screen to create the new item. You can create multiple items without closing the screen, but they " +
+                                    "need to have unique names across all lists/folders for lists and folders, and unique names in the current list for " +
+                                    "tasks.")
+                        }
+
+                        4 -> {
+                            subTitle = "End"
+                            tutText = ("That should cover everything! Remember, if you need to access the tutorial again at any point, you can do so from the " +
+                                    "Settings menu.")
+                        }
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(text = subTitle)
+                    }
+                    Text(text = tutText)
+                    Column(
+                        verticalArrangement = Arrangement.Bottom,
+                        modifier = Modifier.fillMaxHeight()
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.Start,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            if (pageNum > 0) {
+                                Button(onClick = { pageNum-- }) {
+                                    Text(text = "Previous Page")
+                                }
+                            }
+                            Row(
+                                horizontalArrangement = Arrangement.End,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                if (pageNum < 4) {
+                                    Button(onClick = { pageNum++ }) {
+                                        Text(text = "Next Page")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/*Draws the Edit... button screen*/
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditScreen(settingsWidth: Double, settingsHeight: Double, onClose: () -> Unit, inList: Boolean, item: GenericItem, index: Int, items: MutableList<GenericItem>, context: Context,
@@ -1032,6 +1172,7 @@ fun EditScreen(settingsWidth: Double, settingsHeight: Double, onClose: () -> Uni
     }
 }
 
+/*Deletes completed lists if enough time has passed according to settings*/
 private fun deleteCompleted(
     itemsList: MutableList<GenericItem>,
     toDelete: MutableList<GenericItem>,
@@ -1049,7 +1190,7 @@ private fun deleteCompleted(
     }
 }
 
-/*Iterate over current checklist and perform actions on completed tasks according to settings. Do same for handling completed checklists*/
+/*Iterate over current list and perform actions on completed tasks according to settings. Do same for handling completed lists*/
 private fun handleCompletedItems(
     moveCompleteItemsSelect: String,
     activeItems: MutableList<GenericItem>,
@@ -1072,13 +1213,7 @@ private fun handleCompletedItems(
                     activeItems[selectedItemIndex].items[j].position += 1
                 }
                 activeItems[selectedItemIndex].items[i].position = 0
-            } /*legacy code*/
-            "Delete Them" -> {
-                for (j in i + 1 until activeItems[selectedItemIndex].items.size) {
-                    activeItems[selectedItemIndex].items[j].position -= 1
-                }
-                activeItems[selectedItemIndex].items.removeAt(i)
-            } /*end of legacy*/
+            }
         }
         activeItems[selectedItemIndex].items.sortBy{it.position}
         onRedraw()
@@ -1089,6 +1224,7 @@ private fun handleCompletedItems(
     saveItems(context, itemsList)
 }
 
+/*Rebuilds activeItems list by getting parent of current end of path. For use in lists after updates, mainly*/
 private fun rebuildActiveItems(items: MutableList<GenericItem>, activeItems: MutableList<GenericItem>, path: String) {
     activeItems.clear()
     val parent: String
@@ -1105,6 +1241,7 @@ private fun rebuildActiveItems(items: MutableList<GenericItem>, activeItems: Mut
     Log.i("REBUILD", "Rebuilt activeItems: $activeItems")
 }
 
+/*Creates a new item, can be GenericItem or ListItem depending on inList value*/
 private fun createNewItem(
     itemsList: MutableList<GenericItem>,
     named: String,
@@ -1118,7 +1255,7 @@ private fun createNewItem(
     moveCompleteItemsSelect: String,
     onRedraw: () -> Unit
 ) {
-    val illegalNames = mutableListOf<String>()
+    val illegalNames = mutableListOf<String>() /*List built of other names that would cause issues if duplicated*/
     if(inList) {
         activeItems[selectedItemIndex].items.forEach { illegalNames.add(it.name) }
         if(named in illegalNames) {
@@ -1174,6 +1311,7 @@ private fun createNewItem(
     }
 }
 
+/*Saves itemsList to file. Called whenever change occurs so user does not lose data on app close*/
 private fun saveItems(
     context: Context,
     itemsList: MutableList<GenericItem>
@@ -1216,7 +1354,8 @@ private fun saveItems(
     }
 }
 
-private fun loadItems(context: Context, items: MutableList<GenericItem>, path: String, activeItems: MutableList<GenericItem>) {
+/*Loads items from file. Should only be called at beginning of program when items is empty in memory*/
+private fun loadItems(context: Context, items: MutableList<GenericItem>, path: String, activeItems: MutableList<GenericItem>): Boolean {
     try {
         val fileName = "items.txt"
         val file = File(context.filesDir, fileName)
@@ -1224,6 +1363,7 @@ private fun loadItems(context: Context, items: MutableList<GenericItem>, path: S
         if (!file.exists()) {
             Log.w("LOAD", "No saved items found, could be first app use?")
             reader.close()
+            return true
         } else {
             var line: String
             line = reader.readLine()
@@ -1270,14 +1410,16 @@ private fun loadItems(context: Context, items: MutableList<GenericItem>, path: S
                 if(line != EndItems) line = reader.readLine()
             }
             reader.close()
+            return false
         }
     } catch (e: IOException) {
         e.printStackTrace()
-        Log.w("LOAD", "Error loading items")
-        Toast.makeText(context, "Error loading items!", Toast.LENGTH_SHORT).show()
+        Log.w("LOAD", "No saved items found, could be first app use?")
+        return true
     }
 }
 
+/*Saves settings data to file. Called when settings values change in settings screen*/
 private fun saveSettings(context: Context, autoDelListTime: String, autoDelListSelect: String, moveCompleteItemsSelect: String, completedColor: Color) {
     try {
         val fileName = "settings.txt"
@@ -1302,6 +1444,7 @@ private fun saveSettings(context: Context, autoDelListTime: String, autoDelListS
     }
 }
 
+/*Loads settings data from file. If returns nothing, settings get set to default values. Should only be called at beginning of program*/
 private fun loadSettings(context: Context): List<String> {
     return try {
         val fileName = "settings.txt"
