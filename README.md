@@ -7,8 +7,6 @@ Probably a JVM and Android Studio as the app is written fully in Kotlin.
 ## How to Use
 Build the app in Android Studio or something similar. Deploy it on a physical device or emulator. There will be a tutorial on how to use the app that will appear on first-time use.
 ## Future Improvements
-- Improve code readability and add comments
-- Add more debug info for easier testing
 - Add custom image use for item icons
 - Possibly some sort of sharing feature
 - More animations
