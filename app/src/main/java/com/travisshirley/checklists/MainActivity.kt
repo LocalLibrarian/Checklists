@@ -1,5 +1,7 @@
 package com.travisshirley.checklists
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.os.Bundle
 import android.util.Log
@@ -374,6 +376,7 @@ fun CreateScreen(settingsWidth: Double, settingsHeight: Double, context: Context
     val itemTypes = arrayOf("Checklist", "Folder")
     var newItemExpanded by remember { mutableStateOf(false) }
     var newItemSelectedType by remember { mutableStateOf(itemTypes[0]) }
+    var importText by remember{ mutableStateOf("Import Data...") }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxSize()) {
         Box(
             modifier = Modifier
@@ -464,9 +467,83 @@ fun CreateScreen(settingsWidth: Double, settingsHeight: Double, context: Context
                 ) {
                     Text("Create")
                 }
+                if(!inList) {
+                    Button(onClick = { importItems(importText, items, activeItems, path, context) }) {
+                        Text(text = "Import")
+                    }
+                    TextField(
+                        value = importText,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                        singleLine = false,
+                        onValueChange = {
+                            importText = it
+                        }
+                    )
+                }
             }
         }
     }
+}
+
+/*Imports items from string, basically just edited loadItems func*/
+private fun importItems(toImport: String, items: MutableList<GenericItem>, activeItems: MutableList<GenericItem>, path: String, context: Context) {
+    val lines = toImport.split('\n')
+    var i = 0
+    var line = lines[i]
+    var updated = false
+    while (i < lines.size && line != EndItems) {
+        while (line != EndItems) {
+            var lineNum = 0
+            val loadingItem = GenericItem("null", 0, "All items", "checklist", 0L, mutableListOf())
+            while (line != EndItem && line != EndItems) {
+                var innerLineNum = 0
+                var loadingListItem = ListItem("null", 0, 0, 0)
+                when (lineNum) {
+                    0 -> loadingItem.name = line.substringBeforeLast('\n')
+                    1 -> loadingItem.position = activeItems.lastIndex + 1
+                    2 -> loadingItem.parent = line.substringBeforeLast('\n')
+                    3 -> loadingItem.type = line.substringBeforeLast('\n')
+                    4 -> loadingItem.timeCompleted = line.toLong()
+                    else -> {
+                        while (line != EndItem && line != EndItems) {
+                            when (innerLineNum) {
+                                0 -> loadingListItem.name = line.substringBeforeLast('\n')
+                                1 -> loadingListItem.position = line.toInt()
+                                2 -> loadingListItem.completed = line.toInt()
+                                3 -> {
+                                    loadingListItem.max = line.toInt()
+                                    innerLineNum = -1
+                                    loadingItem.items.add(loadingListItem)
+                                    loadingListItem = ListItem("null", 0, 0, 0)
+                                }
+                            }
+                            innerLineNum++
+                            i++
+                            line = lines[i]
+                        }
+                    }
+                }
+                lineNum++
+                if (line != EndItems && loadingItem.items.isEmpty()) {
+                    i++
+                    line = lines[i]
+                }
+            }
+            if (loadingItem.name != "null") {
+                items.add(loadingItem)
+                Log.i("IMPORT", "Imported item: $loadingItem")
+                updated = true
+                if (loadingItem.parent == path.substringAfterLast('/')) {
+                    activeItems.add(loadingItem)
+                }
+            }
+            if (line != EndItems) {
+                i++
+                line = lines[i]
+            }
+        }
+    }
+    if(updated) saveItems(context, items)
 }
 
 /*Draws Settings button screen*/
@@ -685,17 +762,21 @@ fun DrawItemIcon(item: GenericItem, index: Int, inList: Boolean) {
         Image(
             painter = painterResource(R.drawable.listicon),
             contentDescription = "List Icon",
-            Modifier.padding(16.dp).size(30.dp)
+            Modifier
+                .padding(10.dp)
+                .size(30.dp)
         )
     } else{
         Image(
             painter = painterResource(R.drawable.foldericon),
             contentDescription = "Folder Icon",
-            Modifier.padding(16.dp).size(30.dp)
+            Modifier
+                .padding(10.dp)
+                .size(30.dp)
         )
     }
     Text(text = if(!inList) item.name else item.items[index].name,
-        Modifier.padding(16.dp))
+        Modifier.padding(10.dp))
 }
 
 /*Returns true if passed list has all tasks fully completed, false otherwise*/
@@ -711,8 +792,23 @@ fun isCompletedList(list: GenericItem): Boolean {
     return retVal
 }
 
+/*Copies data for an item to clipboard so it can be sent to someone else and pasted into an import.
+Functions similarly to saveItems*/
+fun exportItems(activeItems: MutableList<GenericItem>, index: Int, context: Context) {
+    val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    var copy = activeItems[index].name + '\n' + activeItems[index].position.toString() + '\n' + activeItems[index].parent + '\n' +
+            activeItems[index].type + '\n' + activeItems[index].timeCompleted.toString()
+    activeItems[index].items.forEach {
+        copy += '\n' + it.name + '\n' + it.position.toString() + '\n' + it.completed.toString() + '\n' + it.max.toString()
+    }
+    copy += '\n' + EndItem
+    copy += '\n' + EndItems
+    val clip = ClipData.newPlainText("test", copy)
+    clipboardManager.setPrimaryClip(clip)
+}
+
 /*Draws either GenericItems or ListItems depending on inList value. Draws 1 item at a time, must be called multiple times to draw all.
-* Also handles item dragging/movement and rearranging*/
+Also handles item dragging/movement and rearranging and calls func to export items*/
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DrawItems(
@@ -801,15 +897,20 @@ fun DrawItems(
                 })
             }
     ) {
-        DrawItemIcon(item, index, inList)
-        Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                if (editVisible) {
-                    ShowEditButton(
-                        onClick = { editOpen = true },
-                        on2ndClick = { editVisible = false })
-                }
+        Box(modifier = Modifier.width((screenWidth - 155).dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Start) {
+                DrawItemIcon(item, index, inList)
             }
+        }
+        if (editVisible) {
+            ShowEditButton(
+                onClick = { editOpen = true },
+                on2ndClick = { editVisible = false },
+                bannerHeight,
+                activeItems,
+                index,
+                context)
         }
     }
 }
@@ -823,14 +924,27 @@ fun DrawItems(
     }
 }
 
-/*Draws Edit... and Hide buttons on items*/
+/*Draws Edit..., Hide and Share buttons on items*/
 @Composable
-fun ShowEditButton(onClick: () -> Unit, on2ndClick: () -> Unit) {
-    Button(onClick = { onClick() }) {
-        Text(text = "Edit...")
-    }
-    Button(onClick = { on2ndClick() }) {
-        Text(text = "Hide")
+fun ShowEditButton(onClick: () -> Unit, on2ndClick: () -> Unit, bannerHeight: Double, activeItems: MutableList<GenericItem>, index: Int, context: Context) {
+    Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Button(onClick = { onClick() }) {
+                Text(text = "Edit...")
+            }
+            Button(onClick = { on2ndClick() }) {
+                Text(text = "Hide")
+            }
+        }
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center, modifier = Modifier.fillMaxHeight()) {
+            Image(
+                painter = painterResource(R.drawable.shareicon),
+                contentDescription = "Share Item",
+                modifier = Modifier
+                    .size((bannerHeight / 2.5).dp)
+                    .clickable(enabled = true, onClick = { exportItems(activeItems, index, context) })
+            )
+        }
     }
 }
 
