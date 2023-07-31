@@ -1,4 +1,4 @@
-package com.example.checklists.ui.theme
+package com.travisshirley.checklists.ui.theme
 
 import android.app.Activity
 import android.os.Build

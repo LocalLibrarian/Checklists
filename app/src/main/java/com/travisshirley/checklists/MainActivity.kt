@@ -1,4 +1,4 @@
-package com.example.checklists
+package com.travisshirley.checklists
 
 import android.content.Context
 import android.os.Bundle
@@ -58,6 +58,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import com.example.checklists.R
 import java.io.BufferedReader
 import java.io.BufferedWriter
 import java.io.File
@@ -140,6 +141,7 @@ fun MainScreen() {
     var completedColor = Color.Green
     val settingsSaved= loadSettings(context)
     var choseTutorial by remember{ mutableStateOf(false) }
+    var firstTime by remember{ mutableStateOf(true) }
     if (settingsSaved.isNotEmpty()) {
         autoDelListTime = settingsSaved[0]
         autoDelListSelect = settingsSaved[1]
@@ -220,7 +222,11 @@ fun MainScreen() {
                 .verticalScroll(rememberScrollState())
                 .background(Color.LightGray)
                 .fillMaxSize()) {
-            if(loadItems(context, items, path, activeItems) || choseTutorial) TutorialScreen(settingsWidth, settingsHeight, onClose = {choseTutorial = false})
+            if((loadItems(context, items, path, activeItems) && firstTime) || choseTutorial) {
+                TutorialScreen(settingsWidth, settingsHeight, onClose = {
+                    choseTutorial = false
+                    firstTime = false})
+            }
             items.sortBy{it.position}
             var color = Color.LightGray
             var index = 0
@@ -267,9 +273,12 @@ fun MainScreen() {
                     if(it.parent == path.substringAfterLast('/')) {
                         var timeUnit = 0L
                         when (autoDelListSelect) {
-                            "Minutes" -> {timeUnit = OneMin}
-                            "Hours" -> {timeUnit = OneHour}
-                            "Days" -> {timeUnit = OneDay}
+                            "Minutes" -> {timeUnit = OneMin
+                            }
+                            "Hours" -> {timeUnit = OneHour
+                            }
+                            "Days" -> {timeUnit = OneDay
+                            }
                         }
                         if(it.timeCompleted > 0L && System.currentTimeMillis() - it.timeCompleted >= autoDelListTime.toLong() * timeUnit) {
                             toDelete.add(it)
@@ -381,6 +390,7 @@ fun CreateScreen(settingsWidth: Double, settingsHeight: Double, context: Context
                     contentDescription = "Close Create New Icon",
                     modifier = Modifier
                         .clickable(enabled = true, onClick = { onClose() })
+                        .size(width = 30.dp, height = 30.dp)
                 )
             }
             Column(
@@ -389,7 +399,8 @@ fun CreateScreen(settingsWidth: Double, settingsHeight: Double, context: Context
                 verticalArrangement = Arrangement.Top
             ) {
                 Text(text = "Create New",
-                    fontSize = subTitleFontSize)
+                    fontSize = subTitleFontSize
+                )
                 Box(
                     modifier = Modifier
                         .size(width = settingsWidth.dp, height = 5.dp)
@@ -496,11 +507,13 @@ fun SettingsScreen(
                     contentDescription = "Close Settings Icon",
                     modifier = Modifier
                         .clickable(enabled = true, onClick = { onClose() })
+                        .size(width = 30.dp, height = 30.dp)
                 )
             }
             Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Top) {
                 Text(text = "Settings",
-                    fontSize = subTitleFontSize)
+                    fontSize = subTitleFontSize
+                )
                 Box(
                     modifier = Modifier
                         .size(width = settingsWidth.dp, height = 5.dp)
@@ -730,14 +743,14 @@ fun DrawItems(
     Row(modifier = Modifier
         .width(screenWidth.dp)
         .zIndex(zInd)) {
-        Box(modifier = Modifier.width(10.dp))
+        Box(modifier = Modifier.width(20.dp))
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Start,
         modifier =
         Modifier
             .background(realColor)
-            .size(width = screenWidth.dp - 20.dp, height = bannerHeight.dp)
+            .size(width = screenWidth.dp - 40.dp, height = bannerHeight.dp)
             .combinedClickable(
                 onClick = { onItemSelect(index) },
                 onLongClick = { editVisible = true })
@@ -841,6 +854,7 @@ fun TutorialScreen(settingsWidth: Double, settingsHeight: Double, onClose: () ->
                     contentDescription = "Close Edit Icon",
                     modifier = Modifier
                         .clickable(enabled = true, onClick = { onClose() })
+                        .size(width = 30.dp, height = 30.dp)
                 )
             }
             Column(
@@ -849,7 +863,8 @@ fun TutorialScreen(settingsWidth: Double, settingsHeight: Double, onClose: () ->
                 verticalArrangement = Arrangement.Top
             ) {
                 Text(text = "Tutorial",
-                    fontSize = subTitleFontSize)
+                    fontSize = subTitleFontSize
+                )
                 Box(
                     modifier = Modifier
                         .size(width = settingsWidth.dp, height = 5.dp)
@@ -980,6 +995,7 @@ fun EditScreen(settingsWidth: Double, settingsHeight: Double, onClose: () -> Uni
                     contentDescription = "Close Edit Icon",
                     modifier = Modifier
                         .clickable(enabled = true, onClick = { onClose() })
+                        .size(width = 30.dp, height = 30.dp)
                 )
             }
             Column(
@@ -988,7 +1004,8 @@ fun EditScreen(settingsWidth: Double, settingsHeight: Double, onClose: () -> Uni
                 verticalArrangement = Arrangement.Top
             ) {
                 Text(text = "Edit Item",
-                    fontSize = subTitleFontSize)
+                    fontSize = subTitleFontSize
+                )
                 Box(
                     modifier = Modifier
                         .size(width = settingsWidth.dp, height = 5.dp)
