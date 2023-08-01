@@ -104,6 +104,8 @@ const val TempPath2 = "path_FIX2"
 /*Values defining font sizes*/
 val titleFontSize = 22.sp
 val subTitleFontSize = 20.sp
+/*Value for replacing import/export parent vals in items*/
+const val ReplaceParent = "REPLACEPARENTPATH"
 
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -1127,17 +1129,24 @@ fun EditScreen(settingsWidth: Double, settingsHeight: Double, onClose: () -> Uni
                 )
                 Text(text = "Item Name:")
                 if(!inList) {
+                    val illegalNames = mutableListOf<String>()
+                    illegalNames.addAll(listOf("All items", EndItem, EndItems, ReplaceParent))
+                    items.forEach { illegalNames.add(it.name) }
                     newName = item.name
                     TextField(
                         value = newName,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
                         singleLine = true,
                         onValueChange = {
-                            items.forEach { thing ->
-                                if(thing.parent == item.name) thing.parent = it
-                            }
-                            item.name = it
                             newName = it
+                            if(newName in illegalNames) {
+                                Toast.makeText(context, "Names must be unique. That name is already in use.", Toast.LENGTH_LONG).show()
+                            } else {
+                                items.forEach { thing ->
+                                    if(thing.parent == item.name) thing.parent = it
+                                }
+                                item.name = it
+                            }
                         }
                     )
                     possibleParents.add("All items")
@@ -1176,14 +1185,21 @@ fun EditScreen(settingsWidth: Double, settingsHeight: Double, onClose: () -> Uni
                         }
                     }
                 } else {
+                    val illegalNames = mutableListOf<String>()
+                    illegalNames.addAll(listOf("All items", EndItem, EndItems, ReplaceParent))
+                    item.items.forEach { illegalNames.add(it.name) }
                     newName = item.items[index].name
                     TextField(
                         value = newName,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
                         singleLine = true,
                         onValueChange = {
-                            item.items[index].name = it
                             newName = it
+                            if(newName in illegalNames) {
+                                Toast.makeText(context, "Names must be unique. That name is already in use in this list.", Toast.LENGTH_LONG).show()
+                            } else {
+                                item.items[index].name = it
+                            }
                         }
                     )
                     items.forEach {
@@ -1214,9 +1230,10 @@ fun EditScreen(settingsWidth: Double, settingsHeight: Double, onClose: () -> Uni
                                     onClick = {
                                         for(i in 0 until items.size) {
                                             if(items[i].name == par) {
-                                                val illegalNames = mutableListOf<String>()
-                                                items[i].items.forEach { illegalNames.add(it.name) }
-                                                if(item.items[index].name in illegalNames) {
+                                                val illegalNames2 = mutableListOf<String>()
+                                                illegalNames2.addAll(listOf("All items", EndItem, EndItems, ReplaceParent))
+                                                items[i].items.forEach { illegalNames2.add(it.name) }
+                                                if(item.items[index].name in illegalNames2) {
                                                     Toast.makeText(context, "Names must be unique. That name is already in use in the targeted list.", Toast.LENGTH_LONG).show()
                                                     break
                                                 }
@@ -1393,6 +1410,7 @@ private fun createNewItem(
     onRedraw: () -> Unit
 ) {
     val illegalNames = mutableListOf<String>() /*List built of other names that would cause issues if duplicated*/
+    illegalNames.addAll(listOf("All items", EndItem, EndItems, ReplaceParent))
     if(inList) {
         activeItems[selectedItemIndex].items.forEach { illegalNames.add(it.name) }
         if(named in illegalNames) {
