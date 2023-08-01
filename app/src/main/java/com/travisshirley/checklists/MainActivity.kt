@@ -1300,6 +1300,7 @@ fun EditScreen(settingsWidth: Double, settingsHeight: Double, onClose: () -> Uni
                          }
                          items.removeAt(index)
                     }
+                    onClose()
                 }) {
                     Text(text = "Delete Item")
                 }
