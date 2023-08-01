@@ -104,8 +104,10 @@ const val TempPath2 = "path_FIX2"
 /*Values defining font sizes*/
 val titleFontSize = 22.sp
 val subTitleFontSize = 20.sp
-/*Value for replacing import/export parent vals in items*/
+/*Values for replacing import/export vals in items*/
 const val ReplaceParent = "REPLACEPARENTPATH"
+const val ReplacePosition = "-1"
+const val ImportedSuffix = " (imported)"
 
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -470,7 +472,7 @@ fun CreateScreen(settingsWidth: Double, settingsHeight: Double, context: Context
                     Text("Create")
                 }
                 if(!inList) {
-                    Button(onClick = { importItems(importText, items, activeItems, path, context) }) {
+                    Button(onClick = { importItems(importText, items, activeItems, path, context, onClose = {onClose()}) }) {
                         Text(text = "Import")
                     }
                     TextField(
@@ -488,11 +490,14 @@ fun CreateScreen(settingsWidth: Double, settingsHeight: Double, context: Context
 }
 
 /*Imports items from string, basically just edited loadItems func*/
-private fun importItems(toImport: String, items: MutableList<GenericItem>, activeItems: MutableList<GenericItem>, path: String, context: Context) {
+private fun importItems(toImport: String, items: MutableList<GenericItem>, activeItems: MutableList<GenericItem>, path: String, context: Context, onClose: () -> Unit) {
     val lines = toImport.split('\n')
     var i = 0
     var line = lines[i]
     var updated = false
+    val illegalNames = mutableListOf("All items", EndItem, EndItems, ReplaceParent, ReplacePosition)
+    val updatedNames = mutableListOf<String>()
+    items.forEach { illegalNames.add(it.name) }
     while (i < lines.size && line != EndItems) {
         while (line != EndItems) {
             var lineNum = 0
@@ -501,9 +506,30 @@ private fun importItems(toImport: String, items: MutableList<GenericItem>, activ
                 var innerLineNum = 0
                 var loadingListItem = ListItem("null", 0, 0, 0)
                 when (lineNum) {
-                    0 -> loadingItem.name = line.substringBeforeLast('\n')
-                    1 -> loadingItem.position = activeItems.lastIndex + 1
-                    2 -> loadingItem.parent = line.substringBeforeLast('\n')
+                    0 -> {
+                        if(line.substringBeforeLast('\n') in illegalNames) {
+                            updatedNames.add(line.substringBeforeLast('\n'))
+                            loadingItem.name = line.substringBeforeLast('\n') + ImportedSuffix
+                        }
+                        else {
+                            loadingItem.name = line.substringBeforeLast('\n')
+                        }
+                    }
+                    1 -> {
+                        if(line.substringBeforeLast('\n') == ReplacePosition) loadingItem.position = activeItems.lastIndex + 1
+                        else {
+                            loadingItem.position = line.substringBeforeLast('\n').toInt()
+                        }
+                    }
+                    2 -> {
+                        if(line.substringBeforeLast('\n') == ReplaceParent) loadingItem.parent = path.substringAfterLast('/')
+                        else {
+                            if(line.substringBeforeLast('\n') in updatedNames) loadingItem.parent = line.substringBeforeLast('\n') + ImportedSuffix
+                            else {
+                                loadingItem.parent = line.substringBeforeLast('\n')
+                            }
+                        }
+                    }
                     3 -> loadingItem.type = line.substringBeforeLast('\n')
                     4 -> loadingItem.timeCompleted = line.toLong()
                     else -> {
@@ -545,7 +571,10 @@ private fun importItems(toImport: String, items: MutableList<GenericItem>, activ
             }
         }
     }
-    if(updated) saveItems(context, items)
+    if(updated) {
+        saveItems(context, items)
+        onClose()
+    }
 }
 
 /*Draws Settings button screen*/
@@ -746,6 +775,7 @@ fun SettingsScreen(
                 Button(onClick = {
                     itemsList.clear()
                     saveItems(context, itemsList)
+                    onClose()
                 }) {
                     Text(text = "Wipe All Data")
                 }
@@ -794,19 +824,42 @@ fun isCompletedList(list: GenericItem): Boolean {
     return retVal
 }
 
+/*Exports 1 item. Separate func just to change handling of position and parent values*/
+private fun export1Item(item: GenericItem): String {
+    var toReturn = '\n' + EndItem + '\n' + item.name + '\n' + item.position + '\n' + item.parent + '\n' +
+            item.type + '\n' + item.timeCompleted.toString()
+    item.items.forEach {
+        toReturn += '\n' + it.name + '\n' + it.position.toString() + '\n' + it.completed.toString() + '\n' + it.max.toString()
+    }
+    return toReturn
+}
+
 /*Copies data for an item to clipboard so it can be sent to someone else and pasted into an import.
 Functions similarly to saveItems*/
-fun exportItems(activeItems: MutableList<GenericItem>, index: Int, context: Context) {
+fun exportItems(activeItems: MutableList<GenericItem>, index: Int, context: Context, items: MutableList<GenericItem>) {
     val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    var copy = activeItems[index].name + '\n' + activeItems[index].position.toString() + '\n' + activeItems[index].parent + '\n' +
+    var copy = activeItems[index].name + '\n' + ReplacePosition + '\n' + ReplaceParent + '\n' +
             activeItems[index].type + '\n' + activeItems[index].timeCompleted.toString()
     activeItems[index].items.forEach {
         copy += '\n' + it.name + '\n' + it.position.toString() + '\n' + it.completed.toString() + '\n' + it.max.toString()
     }
+    val neededParents = mutableListOf<String>()
+    neededParents.add(activeItems[index].name) /*Grabbing all children of current folder and children of those folders, etc. (if needed)*/
+    while(neededParents.isNotEmpty()) {
+        items.forEach {
+            if (it.parent == neededParents[0]) {
+                copy += export1Item(it)
+                neededParents.add(it.name)
+            }
+        }
+        neededParents.removeAt(0)
+    }
     copy += '\n' + EndItem
     copy += '\n' + EndItems
-    val clip = ClipData.newPlainText("test", copy)
+    val clip = ClipData.newPlainText("Exported Checklist Item", copy)
     clipboardManager.setPrimaryClip(clip)
+    Toast.makeText(context, "Copied export data to clipboard", Toast.LENGTH_SHORT).show()
+    Log.i("EXPORT", "Exported data: $copy")
 }
 
 /*Draws either GenericItems or ListItems depending on inList value. Draws 1 item at a time, must be called multiple times to draw all.
@@ -912,7 +965,9 @@ fun DrawItems(
                 bannerHeight,
                 activeItems,
                 index,
-                context)
+                context,
+                items,
+                inList)
         }
     }
 }
@@ -928,7 +983,7 @@ fun DrawItems(
 
 /*Draws Edit..., Hide and Share buttons on items*/
 @Composable
-fun ShowEditButton(onClick: () -> Unit, on2ndClick: () -> Unit, bannerHeight: Double, activeItems: MutableList<GenericItem>, index: Int, context: Context) {
+fun ShowEditButton(onClick: () -> Unit, on2ndClick: () -> Unit, bannerHeight: Double, activeItems: MutableList<GenericItem>, index: Int, context: Context, items: MutableList<GenericItem>, inList: Boolean) {
     Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Button(onClick = { onClick() }) {
@@ -938,14 +993,22 @@ fun ShowEditButton(onClick: () -> Unit, on2ndClick: () -> Unit, bannerHeight: Do
                 Text(text = "Hide")
             }
         }
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center, modifier = Modifier.fillMaxHeight()) {
-            Image(
-                painter = painterResource(R.drawable.shareicon),
-                contentDescription = "Share Item",
-                modifier = Modifier
-                    .size((bannerHeight / 2.5).dp)
-                    .clickable(enabled = true, onClick = { exportItems(activeItems, index, context) })
-            )
+        if(!inList) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier.fillMaxHeight()
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.shareicon),
+                    contentDescription = "Share Item",
+                    modifier = Modifier
+                        .size((bannerHeight / 2.5).dp)
+                        .clickable(
+                            enabled = true,
+                            onClick = { exportItems(activeItems, index, context, items) })
+                )
+            }
         }
     }
 }
@@ -1011,7 +1074,8 @@ fun TutorialScreen(settingsWidth: Double, settingsHeight: Double, onClose: () ->
                                         "are in the list, depending on your settings. Lists with all tasks completed also color differently and will delete after some " +
                                         "time, depending on settings.\n\nYou can also tap and hold on tasks/lists/folders to edit them after tapping \"Edit...\". This " +
                                         "allows you to change their name, what folder/list they belong to, and current completion/max completeness of tasks, as " +
-                                        "well as delete items.\n\nNOTE: when typing in many text boxes in this app, you may have to tap and hold to select all " +
+                                        "well as delete items. You may also tap on the share icon beside lists and folders to export them by copying their data to the clipboard." +
+                                        "\n\nNOTE: when typing in many text boxes in this app, you may have to tap and hold to select all " +
                                         "text/numbers in the box, then start typing in order to properly enter what information you want.\n\nLastly, you can also " +
                                         "drag lists and tasks to re-order them on screen.")
                         }
@@ -1033,7 +1097,8 @@ fun TutorialScreen(settingsWidth: Double, settingsHeight: Double, onClose: () ->
                             subTitle = "Add new..."
                             tutText = ("The Add New screen, accessed via the button in the top-right, is where you create new lists, folders, and " +
                                     "tasks/list items. When this button is tapped on and you are not in a list, you can name and create a new list or folder " +
-                                    "in the current folder (or add it to \"All items\").\n\nWhen in a list, you name the task you are adding and define its " +
+                                    "in the current folder (or add it to \"All items\"). You can also import items by pasting their data into the box below the Import button, then pressing it." +
+                                    "\n\nWhen in a list, you name the task you are adding and define its " +
                                     "maximum completeness, which is how many times it can be tapped on before being marked as complete.\n\nClick create when " +
                                     "done in the Add New screen to create the new item. You can create multiple items without closing the screen, but they " +
                                     "need to have unique names across all lists/folders for lists and folders, and unique names in the current list for " +
@@ -1130,7 +1195,7 @@ fun EditScreen(settingsWidth: Double, settingsHeight: Double, onClose: () -> Uni
                 Text(text = "Item Name:")
                 if(!inList) {
                     val illegalNames = mutableListOf<String>()
-                    illegalNames.addAll(listOf("All items", EndItem, EndItems, ReplaceParent))
+                    illegalNames.addAll(listOf("All items", EndItem, EndItems, ReplaceParent, ReplacePosition))
                     items.forEach { illegalNames.add(it.name) }
                     newName = item.name
                     TextField(
@@ -1186,7 +1251,7 @@ fun EditScreen(settingsWidth: Double, settingsHeight: Double, onClose: () -> Uni
                     }
                 } else {
                     val illegalNames = mutableListOf<String>()
-                    illegalNames.addAll(listOf("All items", EndItem, EndItems, ReplaceParent))
+                    illegalNames.addAll(listOf("All items", EndItem, EndItems, ReplaceParent, ReplacePosition))
                     item.items.forEach { illegalNames.add(it.name) }
                     newName = item.items[index].name
                     TextField(
@@ -1231,7 +1296,7 @@ fun EditScreen(settingsWidth: Double, settingsHeight: Double, onClose: () -> Uni
                                         for(i in 0 until items.size) {
                                             if(items[i].name == par) {
                                                 val illegalNames2 = mutableListOf<String>()
-                                                illegalNames2.addAll(listOf("All items", EndItem, EndItems, ReplaceParent))
+                                                illegalNames2.addAll(listOf("All items", EndItem, EndItems, ReplaceParent, ReplacePosition))
                                                 items[i].items.forEach { illegalNames2.add(it.name) }
                                                 if(item.items[index].name in illegalNames2) {
                                                     Toast.makeText(context, "Names must be unique. That name is already in use in the targeted list.", Toast.LENGTH_LONG).show()
@@ -1410,7 +1475,7 @@ private fun createNewItem(
     onRedraw: () -> Unit
 ) {
     val illegalNames = mutableListOf<String>() /*List built of other names that would cause issues if duplicated*/
-    illegalNames.addAll(listOf("All items", EndItem, EndItems, ReplaceParent))
+    illegalNames.addAll(listOf("All items", EndItem, EndItems, ReplaceParent, ReplacePosition))
     if(inList) {
         activeItems[selectedItemIndex].items.forEach { illegalNames.add(it.name) }
         if(named in illegalNames) {
